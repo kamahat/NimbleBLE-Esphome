@@ -182,7 +182,19 @@ ESPHome core, pas une invention de ce projet.
   réel sur ESP32-S3 (poste local, port COM12/CH343) + confirmation visuelle
   d'advertising via un scanner BLE téléphone -- pas encore fait depuis le bastion
   (pas d'USB).
-- **M2** — Parité scan (`esp32_ble_tracker`).
+- **M2** — Parité scan : **compile vérifié 2026-09-01** (`esp32_ble_tracker` +
+  triggers `on_ble_advertise`/`on_ble_service_data_advertise`/
+  `on_ble_manufacturer_data_advertise`/`on_scan_end`). Écart architectural assumé :
+  contrairement à Bluedroid (un seul callback GAP global), NimBLE attend un
+  callback par opération (`ble_gap_disc`, `ble_gap_connect`, `ble_gap_adv_start`) --
+  le tracker possède donc directement sa session `ble_gap_disc()` au lieu de
+  s'enregistrer sur un dispatch central `esp32_ble` (les helpers Python
+  `esp32_ble.register_gap_event_handler`/etc. du core n'existent pas dans notre
+  surcharge -- décision assumée, pas un oubli). NimBLE livrant advertisement et
+  scan response comme deux événements séparés (contrairement à Bluedroid qui les
+  fusionne déjà), le tracker réutilise `ble_device_base::ScanResponseMerger`/
+  `AdvDispatcher` (déjà vendorés, prévus exactement pour ce cas). Reste M2 : flash
+  matériel + vérification qu'un vrai appareil BLE proche est détecté (pas encore fait).
 - **M3** — Parité GATT bout-en-bout : `bluetooth_connection` (chemin `bluetooth_proxy`/HA,
   jalon prioritaire) ET `esp32_ble_client` (chemin legacy `ble_client:`/`BLEClientNode`,
   dans le périmètre v1 par décision utilisateur) ; découverte bornée dans les deux.

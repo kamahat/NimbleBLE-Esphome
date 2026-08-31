@@ -17,6 +17,7 @@ AUTO_LOAD = ["ble_device_base", "nimble_ble"]
 DEPENDENCIES = ["esp32"]
 CODEOWNERS = ["@kamahat"]
 
+CONF_BLE_ID = "ble_id"
 CONF_ADVERTISING = "advertising"
 CONF_ADVERTISING_CYCLE_TIME = "advertising_cycle_time"
 

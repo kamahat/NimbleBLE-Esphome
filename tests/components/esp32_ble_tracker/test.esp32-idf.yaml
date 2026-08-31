@@ -1,0 +1,24 @@
+esphome:
+  name: nimble-m2-test
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: local
+      path: ../../../components
+    components: [esp32_ble, nimble_ble, ble_device_base, esp32_ble_tracker]
+
+esp32_ble:
+  name: "Nimble M2 Test"
+
+esp32_ble_tracker:
+  on_ble_advertise:
+    - then:
+        - lambda: |-
+            ESP_LOGI("m2_test", "Adv: %s RSSI=%d", x.address_str_to((char *) alloca(18)), x.get_rssi());
+
+logger:
