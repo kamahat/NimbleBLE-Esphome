@@ -7,8 +7,8 @@ Quand un utilisateur référence ce dépôt via :
 ```yaml
 external_components:
   - source: github://kamahat/NimbleBLE-Esphome@main
-    components: [esp32_ble, ble_device_base, esp32_ble_tracker, esp32_ble_client,
-                 esp32_ble_server, esp32_ble_beacon, bluetooth_proxy]
+    components: [esp32_ble, esp32_ble_tracker, esp32_ble_client, esp32_ble_server,
+                 esp32_ble_beacon, bluetooth_connection, bluetooth_proxy]
 ```
 
 ESPHome charge **la totalité** de chaque répertoire `components/<name>/` de ce dépôt à la

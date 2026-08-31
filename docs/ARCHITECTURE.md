@@ -1,79 +1,149 @@
 # Architecture
 
-## Commit ESPHome ciblé (M0)
+## Commit ESPHome ciblé (M0 — TERMINÉ)
 
-**À figer définitivement en fin de M0.** Snapshot de référence utilisé pour la conception :
 `esphome/esphome` commit `813c0006842681e1408d27e017897abd74a87b69` (branche par défaut,
-2026-08-31).
+snapshot pris le 2026-08-31). Les 8 répertoires pertinents ont été lus directement à ce
+commit (listing de fichiers + interfaces publiques clés) — le détail ci-dessous, pas une
+supposition.
 
-Confirmé par lecture directe à cette date :
-- `esphome/components/ble_device_base/` existe et contient : `__init__.py`, `automation.h`,
-  `automation.py`, `ble_aes_ccm.cpp`/`.h`, `ble_client_state.cpp`/`.h`, `ble_device.cpp`/`.h`,
-  `ble_gatt_client.h`, `ble_hub.h`, `ble_hub_impl.h`, `scan_response_merger.cpp`/`.h`.
-  Ce composant porte le contrat `BLEGattConnectionContract` (interface `GattClientListener` :
-  `on_connection_state`, `on_service_discovery_done`, `on_read_result`, `on_write_result`,
-  `on_notify_state`, `on_notify_data`, `on_pairing_result` — extrait de `ble_gatt_client.h`).
-- `esphome/components/esp32_ble_tracker/` est réduit à un fin wrapper : `__init__.py`,
-  `automation.h`, `esp32_ble_tracker.cpp`/`.h`.
-- `esphome/components/bluetooth_proxy/` contient `__init__.py`, `bluetooth_proxy.cpp`/`.h`
-  (pas de fichier `bluetooth_connection.*` séparé à cette date — la logique de chunking GATT
-  a été repliée dans `bluetooth_proxy.cpp`).
+## Découverte majeure (correction de la conception initiale)
 
-**Encore à confirmer en M0** (non lu dans cette session) : contenu exact de
-`esphome/components/esp32_ble/`, `esp32_ble_client/`, `esp32_ble_server/`, `esp32_ble_beacon/`
-sur ce même commit — nécessaire avant d'écrire le moindre override.
+Le premier passage de conception (recherche via agents) avait supposé 7 répertoires à
+surcharger, dont `ble_device_base`, en pensant que c'était là que vivait le contrat GATT
+concret. **Une lecture directe du code a révélé deux erreurs, corrigées ici :**
 
-## Fait déterminant : pourquoi un override complet, pas un plugin
+1. **`ble_device_base` est déjà platform-neutre et n'a PAS besoin d'être surchargé.**
+   `ble_gatt_client.h` y définit `BLEGattConnectionContract` comme un **concept C++20**
+   (pas une classe virtuelle) : `template<typename T> concept BLEGattConnectionContract =
+   requires(T conn, ...) { conn.connect(...); conn.discover_services(); ... }`. N'importe
+   quel backend (Bluedroid, NimBLE, BTstack sur RP2040) satisfait ce concept sans toucher
+   à `ble_device_base`. On implémente juste un nouveau backend qui satisfait le concept.
 
-La pile BLE d'ESPHome (Bluedroid) et NimBLE sont mutuellement exclusives au niveau du
-`sdkconfig` ESP-IDF (`CONFIG_BT_BLUEDROID_ENABLED` vs `CONFIG_BT_NIMBLE_ENABLED`). Le
-composant `bluetooth_proxy`/`ble_device_base` sélectionne son backend GATT via un dispatch
-**compile-time** (`#if defined(...) #else #error`) — ce n'est pas un point d'extension
-runtime ni un point d'extension `external_component` au sens habituel (ajouter un nouveau
-composant à côté). La seule voie sans PR upstream : **surcharger entièrement** les
-répertoires concernés via `external_components:` (mécanisme confirmé : `esphome/loader.py`,
-`ComponentMetaFinder` inséré en tête de `sys.meta_path` ; documenté dans
-`external_components.mdx` ; démontré en pratique par `rjt-rockx/esphome-host-linux`, qui
-surcharge exactement cette même chaîne).
+2. **Un 8e répertoire, absent de la conception initiale, est celui qui compte vraiment
+   pour le remplacement de backend : `esphome/components/bluetooth_connection/`.**
+   Découvert par recherche de code (`bluetooth_connection_gatt_backend.h` n'apparaissait
+   dans aucun des 7 répertoires initialement listés). Contenu confirmé :
+   - `bluetooth_connection_gatt_backend.h` — le point de liaison exact :
+     ```cpp
+     #if defined(USE_RP2040_BLE)
+       #include "bluetooth_connection_rp2.h"
+       #define ESPHOME_BLE_GATT_CONNECTION_TYPE bluetooth_connection::RP2GattClient
+     #elif defined(USE_ESP32_BLE)
+       #include "bluetooth_connection_bluedroid.h"
+       #define ESPHOME_BLE_GATT_CONNECTION_TYPE bluetooth_connection::BluedroidGattClient
+     #else
+       #error "USE_BLE_GATT_CLIENT is set but this build has no GATT backend"
+     #endif
+     namespace esphome::ble_device_base {
+       using BLEGattConnection = ESPHOME_BLE_GATT_CONNECTION_TYPE;
+       static_assert(BLEGattConnectionContract<BLEGattConnection>, "...");
+     }
+     ```
+     **C'est exactement le point d'insertion pour NimBLE** : ajouter un troisième bras
+     (`bluetooth_connection::NimbleGattClient`) et forcer sa sélection via notre propre
+     define de sdkconfig (pas besoin de dépendre de `USE_ESP32_BLE`/`USE_RP2040_BLE` du
+     core — on peut définir notre propre macro dans `esp32_ble/__init__.py`).
+   - `bluetooth_connection_bluedroid.cpp/.h` (33 Ko) — le backend Bluedroid actuel
+     (`BluedroidGattClient`), à ne PAS reprendre (clean-room) mais à égaler
+     fonctionnellement.
+   - `bluetooth_connection_hub.cpp/.h` (25 Ko) — **dans le namespace `esphome::
+     bluetooth_proxy`** malgré son emplacement dans ce répertoire : c'est le hub qui
+     consomme le `GattClientListener`, gère le chunking `GATTGetServicesResponse`
+     (confirme le fait #7 de la conception initiale — MAX_PACKET_SIZE existe bien, juste
+     pas dans `bluetooth_proxy.cpp` comme supposé, mais ici).
+   - `bluetooth_connection.cpp/.h` — classe de base commune (wrapper `BluetoothConnection`).
+   - `bluetooth_connection_rp2.cpp/.h` — backend BTstack pour RP2040 (référence de style
+     pour un second backend dans ce même répertoire — utile comme modèle structurel).
+   - Une "arme" de test existe déjà dans `bluetooth_connection_gatt_backend.h` pour les
+     tests host (`StubGattBackend`, activée par `USE_BLE_GATT_CLIENT_STUB_BACKEND`) —
+     son jeu de méthodes est un gabarit exact de ce que `NimbleGattClient` doit
+     implémenter : `set_listener`, `connect(uint64_t, uint8_t)`, `gatt_disconnect()`,
+     `cancel_gatt_disconnect()`, `discover_services()`, `read_characteristic(uint16_t)`,
+     `write_characteristic(uint16_t, const uint8_t*, uint16_t, bool)`,
+     `read_descriptor(uint16_t)`, `write_descriptor(uint16_t, const uint8_t*, uint16_t)`,
+     `notify_characteristic(uint16_t, bool)`, `pair()`,
+     `update_connection_params(uint16_t, uint16_t, uint16_t, uint16_t)`,
+     `get_service_table()`, `release_services()`, `set_connection_type(ConnectionType)`.
 
-## Répertoires à surcharger (override = remplacement intégral)
+## Répertoires à surcharger (override = remplacement intégral) — liste finale
 
-1. `esp32_ble` — init contrôleur/host NimBLE, advertising
-2. `ble_device_base` — implémente `BLEGattConnectionContract` contre NimBLE
-3. `esp32_ble_tracker` — scan, fan-out des listeners
-4. `esp32_ble_client` — connexion/découverte/lecture/écriture GATT client ; **timeout borné
-   de découverte** posé ici (correctif central, voir HARDWARE_VALIDATION.md)
-5. `esp32_ble_server` — rôle GATT serveur/périphérique (dans le périmètre v1)
-6. `esp32_ble_beacon`
-7. `bluetooth_proxy` — intégration HA ; aucun code réseau propre, uniquement des handlers
-   invoqués par `APIConnection` → hérite gratuitement de l'auth Noise tant qu'aucun listener
-   parallèle n'est ouvert (voir SECURITY.md)
+1. **`esp32_ble`** — init contrôleur/host, advertising. Confirmé : la classe
+   `ESP32BLE final : public Component` a sa file d'événements (`BLEEvent`,
+   `LockFreeQueue`) **typée directement sur les structures Bluedroid**
+   (`esp_gap_ble_cb_event_t`, `esp_ble_gap_cb_param_t`, `esp_gattc_cb_event_t`,
+   `esp_ble_gattc_cb_param_t`, `esp_gatts_cb_event_t`) — ce n'est pas juste une question
+   de sdkconfig, la surface C++ elle-même doit être réécrite pour NimBLE (types
+   d'événements différents). Singleton `extern ESP32BLE *global_ble`.
+2. **`esp32_ble_tracker`** — scan. `ESP32BLETracker final : public Component, public
+   Parented<ESP32BLE>` appelle directement les API Bluedroid de scan GAP
+   (`gap_scan_result_`, `gap_scan_set_param_complete_`, etc.). Réexporte pour
+   compat descendante des types désormais définis dans `ble_device_base`
+   (`ClientState`, `ConnectionType`, `ScannerState`, `ESPBTDevice` — ceux-là **restent
+   inchangés**, seule la mécanique Bluedroid doit être remplacée). Contient déjà une
+   state machine de **timeout de scan** (`ScanTimeoutState`, `scan_timeout_ms_ =
+   scan_duration_ * 2000`) — à distinguer du **timeout de découverte GATT qui, lui,
+   n'existe nulle part** (absence confirmée, voir HARDWARE_VALIDATION.md).
+3. **`esp32_ble_client`** — chemin legacy `ble_client:`/`BLEClientNode`, **distinct du
+   chemin `bluetooth_proxy`** (décision utilisateur : gardé dans le périmètre v1 malgré
+   ce découplage). `BLEClientBase : public espbt::ESPBTClient, public Component` —
+   state machine de connexion Bluedroid-native complète (30 Ko), avec déjà un
+   **timeout de sécurité de 10s sur DISCONNECTING** (`set_disconnecting_()`,
+   commentaire : *"the DISCONNECTING timeout check in loop() would never run if
+   CLOSE_EVT gets lost"*) — donc un precedent existant de "timeout de sécurité"
+   dans ESPHome core, à réutiliser comme modèle pour notre `discover_timeout` FSM.
+   C'est le chemin qu'utilisait l'ancien composant custom `boks_spike` (projet
+   `esphome-boks-spike`, sur le poste local) via `BLEClientNode`.
+4. **`esp32_ble_server`** — rôle GATT serveur/périphérique. `BLEServer final : public
+   Component, public Parented<ESP32BLE>` — dépend uniquement de `esp32_ble` (pas de
+   `bluetooth_connection`/`ble_device_base`), portage relativement autonome.
+5. **`esp32_ble_beacon`** — `ESP32BLEBeacon final : public Component` — dépend
+   uniquement de `esp32_ble` (advertising), le plus simple des 7.
+6. **`bluetooth_connection`** (le répertoire découvert, voir ci-dessus) — c'est ici
+   que vit le vrai point d'insertion NimBLE pour le chemin `bluetooth_proxy`/HA :
+   `bluetooth_connection_gatt_backend.h` (binding), notre futur
+   `bluetooth_connection_nimble.h/.cpp` (`NimbleGattClient`, satisfaisant
+   `BLEGattConnectionContract`), et `bluetooth_connection_hub.*` (chunking/hub,
+   dans le namespace `bluetooth_proxy`).
+7. **`bluetooth_proxy`** — glue de haut niveau (`__init__.py`, `bluetooth_proxy.cpp/h`
+   seulement) ; aucun code réseau propre — hérite de l'auth Noise via `APIConnection`
+   (voir SECURITY.md).
+
+**`ble_device_base` n'est PAS surchargé** — platform-neutre, réutilisé tel quel (voir
+Découverte majeure ci-dessus).
 
 ## Couche NimBLE partagée (nouveau, pas une surcharge)
 
 `components/nimble_ble/` — bring-up contrôleur/host NimBLE (API ESP-IDF NimBLE brutes :
 `nimble_port.h`, `host/ble_gap.h`, `host/ble_gattc.h`, `host/ble_gatts.h`), traduction des
 callbacks C NimBLE en événements C++ typés, adaptateur UUID (`ESPBTUUID` ↔ NimBLE),
-moteur de state machine généré (`nimble_fsm/`, voir plus bas).
+moteur de state machine généré (`nimble_fsm/`, voir plus bas). `NimbleGattClient`
+(satisfaisant `BLEGattConnectionContract`) sera implémenté dans
+`components/bluetooth_connection/bluetooth_connection_nimble.cpp/.h` et s'appuiera sur
+cette couche partagée.
 
 ## State machine de connexion/découverte
 
 Voir `spec/transitions.json` (source unique de vérité) — états `Idle, Scanning, Connecting,
 Discovering, Ready, Disconnecting, Backoff`, avec deadline explicite posée à l'entrée de
 `Connecting`/`Discovering`, corrigeant l'absence de timeout côté device dans Bluedroid/ESPHome
-aujourd'hui (voir HARDWARE_VALIDATION.md pour la preuve terrain de ce manque).
+aujourd'hui (voir HARDWARE_VALIDATION.md pour la preuve terrain de ce manque). Le précédent
+du timeout de sécurité 10s de `esp32_ble_client::BLEClientBase::set_disconnecting_()`
+(point 3 ci-dessus) confirme que ce type de garde-fou est un pattern déjà accepté dans
+ESPHome core, pas une invention de ce projet.
 
 ## Jalons
 
-- **M0** — Recon & pin : figer le commit ESPHome exact, confirmer la surface publique des
-  7 répertoires. Sortie : ce fichier nomme le commit figé (section ci-dessus complétée).
+- **M0** — Recon & pin : **TERMINÉ 2026-08-31.** Commit figé, 8 répertoires lus
+  directement, contrat `BLEGattConnectionContract` et point d'insertion exacts confirmés.
 - **M1** — Bring-up NimBLE : `nimble_ble` + surcharge `esp32_ble` compilent, advertise.
-- **M2** — Parité scan.
-- **M3** — Parité client GATT + découverte bornée (test de non-régression : verrou hors
-  portée/éteint → sortie bornée, pas de hang).
+- **M2** — Parité scan (`esp32_ble_tracker`).
+- **M3** — Parité GATT bout-en-bout : `bluetooth_connection` (chemin `bluetooth_proxy`/HA,
+  jalon prioritaire) ET `esp32_ble_client` (chemin legacy `ble_client:`/`BLEClientNode`,
+  dans le périmètre v1 par décision utilisateur) ; découverte bornée dans les deux.
 - **M4** — `bluetooth_proxy` bout-en-bout + validation matérielle réelle (voir
   HARDWARE_VALIDATION.md).
-- **M5** — Rôle serveur GATT.
+- **M5** — Rôle serveur GATT (`esp32_ble_server`).
 - **M6** — Spec formelle + propriétés TLC vertes en CI.
 - **M7** — Hardening (backoff, pairing policy, adv queue — voir SECURITY.md).
 - **M8** — CI, docs, première release taguée.
