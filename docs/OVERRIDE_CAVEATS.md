@@ -7,8 +7,8 @@ Quand un utilisateur référence ce dépôt via :
 ```yaml
 external_components:
   - source: github://kamahat/NimbleBLE-Esphome@main
-    components: [esp32_ble, esp32_ble_tracker, esp32_ble_client, esp32_ble_server,
-                 esp32_ble_beacon, bluetooth_connection, bluetooth_proxy]
+    components: [esp32_ble, ble_device_base, esp32_ble_tracker, esp32_ble_client,
+                 esp32_ble_server, esp32_ble_beacon, bluetooth_connection, bluetooth_proxy]
 ```
 
 ESPHome charge **la totalité** de chaque répertoire `components/<name>/` de ce dépôt à la
@@ -49,3 +49,8 @@ fichier toute fonctionnalité upstream sciemment non reprise (avec la raison).
 
 _Aucune entrée pour l'instant — ce fichier doit être mis à jour à chaque milestone qui
 touche un répertoire surchargé._
+
+
+## Piège vérifié en pratique (M1, 2026-08-31)
+
+Un composant absent de la liste `components:` d'un `external_components:` **ne surcharge rien** -- ESPHome retombe silencieusement sur la version core, sans erreur ni avertissement. `ble_device_base` a été oublié de cette liste lors du premier essai de compile M1 : le patch (voir ARCHITECTURE.md) était bien écrit sur disque mais jamais utilisé, et l'erreur observée (`esp_bt_defs.h: No such file or directory`) était identique à avant le patch -- rien dans le message d'erreur ne signale ce piège, il faut vérifier la liste `components:` en premier reflexe face à un override qui semble ignoré.

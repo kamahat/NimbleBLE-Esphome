@@ -1,0 +1,19 @@
+esphome:
+  name: nimble-m1-test
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: local
+      path: ../../../components
+    components: [esp32_ble, nimble_ble, ble_device_base]
+
+esp32_ble:
+  name: "Nimble M1 Test"
+  advertising: true
+
+logger:

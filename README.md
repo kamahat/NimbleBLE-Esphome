@@ -1,8 +1,9 @@
 # NimbleBLE-Esphome
 
 Suite de composants **ESPHome `external_component`** qui remplace la pile BLE native
-d'ESPHome (Bluedroid, imposée par `esp32_ble`/`esp32_ble_tracker`/`esp32_ble_client`/
-`esp32_ble_server`/`esp32_ble_beacon`/`bluetooth_connection`/`bluetooth_proxy`) par une
+d'ESPHome (Bluedroid, imposée par `esp32_ble`/`ble_device_base`/`esp32_ble_tracker`/
+`esp32_ble_client`/`esp32_ble_server`/`esp32_ble_beacon`/`bluetooth_connection`/
+`bluetooth_proxy`) par une
 implémentation basée sur **NimBLE** (API ESP-IDF NimBLE brutes), tout en préservant les
 mêmes classes/namespaces/schémas de configuration — donc un remplacement quasi transparent
 pour un utilisateur ESPHome existant.

@@ -7,6 +7,47 @@ snapshot pris le 2026-08-31). Les 8 répertoires pertinents ont été lus direct
 commit (listing de fichiers + interfaces publiques clés) — le détail ci-dessous, pas une
 supposition.
 
+## M1 -- premier compile réel réussi (2026-08-31)
+
+`esphome compile` (ESPHome 2026.8.2, ESP-IDF 5.5.5, cible esp32s3) **réussit**
+contre `tests/components/esp32_ble/test.esp32-idf.yaml` : `nimble_ble` (bring-up
+contrôleur/host NimBLE) + la surcharge `esp32_ble` (event queue, advertising)
+compilent et lient, binaire produit (`firmware.factory.bin`, Flash 25%, RAM 25%).
+Test réalisé sur claude-mgmt (venv Python 3.12 dédié via `uv`, voir
+`docs/UPSTREAM_SYNC.md` -- ESPHome ≥2026.7.0 exige Python ≥3.12, le système est
+en 3.11).
+
+**Correction supplémentaire découverte pendant ce premier compile** :
+`ble_device_base` n'est PAS totalement platform-neutre comme documenté plus bas
+le suggérait -- `ble_device.h` inclut `<esp_bt_defs.h>` sans condition sous
+`USE_ESP32` (pour les méthodes historiques `ESPBTUUID::from_uuid/get_uuid` et
+`ESPBTDevice::get_address_type`). Ce header vit sur le chemin d'include
+Bluedroid d'ESP-IDF (`bt/host/bluedroid/api/include/api/`), invisible dès que
+`CONFIG_BT_BLUEDROID_ENABLED=n` (confirmé par le diagnostic ninja lui-même).
+`cg.add_build_flag("-I...")` ne résout PAS ce genre de problème pour les builds
+ESP-IDF : confirmé en lisant `esphome/framework_helpers.py::
+get_project_compile_flags()`, qui ne retient que les flags `-D`/`-W`, jamais
+`-I` -- un flag `-I` passé par un `external_component` est silencieusement
+ignoré sur ce framework (fonctionnerait sur Arduino/PlatformIO via CPPPATH,
+pas ici).
+
+**Fix retenu** : `ble_device_base` EST surchargé après tout, mais de façon
+strictement minimale -- `components/ble_device_base/` vendore le core à
+l'identique, sauf `ble_device.h` où `#include <esp_bt_defs.h>` devient
+`#include "esp_bt_defs_compat.h"` (quoted, même répertoire -- résolu par
+recherche same-directory, sans mécanisme d'include global). Le shim
+(`esp_bt_defs_compat.h`) ne définit que les 2 types réellement utilisés
+(`esp_bt_uuid_t`, `esp_ble_addr_type_t`). **Point d'attention pour
+`docs/UPSTREAM_SYNC.md`** : toute resynchronisation contre un nouveau commit
+ESPHome doit re-vérifier que ce seul écart (une ligne d'include) reste
+suffisant.
+
+**Piège de configuration à ne pas répéter** : un composant override doit être
+listé explicitement dans `external_components: components: [...]` du YAML --
+sinon ESPHome retombe silencieusement sur la version core (aucune erreur,
+juste le comportement Bluedroid non patché). `ble_device_base` a dû être
+ajouté à cette liste en plus de `esp32_ble`/`nimble_ble`.
+
 ## Découverte majeure (correction de la conception initiale)
 
 Le premier passage de conception (recherche via agents) avait supposé 7 répertoires à
@@ -109,8 +150,8 @@ concret. **Une lecture directe du code a révélé deux erreurs, corrigées ici 
    seulement) ; aucun code réseau propre — hérite de l'auth Noise via `APIConnection`
    (voir SECURITY.md).
 
-**`ble_device_base` n'est PAS surchargé** — platform-neutre, réutilisé tel quel (voir
-Découverte majeure ci-dessus).
+**`ble_device_base` EST surchargé**, mais de façon minimale (un seul include patché,
+voir section M1 ci-dessus) -- pas une réécriture, un vendoring quasi à l'identique.
 
 ## Couche NimBLE partagée (nouveau, pas une surcharge)
 
@@ -136,7 +177,11 @@ ESPHome core, pas une invention de ce projet.
 
 - **M0** — Recon & pin : **TERMINÉ 2026-08-31.** Commit figé, 8 répertoires lus
   directement, contrat `BLEGattConnectionContract` et point d'insertion exacts confirmés.
-- **M1** — Bring-up NimBLE : `nimble_ble` + surcharge `esp32_ble` compilent, advertise.
+- **M1** — Bring-up NimBLE : **compile vérifié 2026-08-31** (`nimble_ble` +
+  surcharge `esp32_ble` + patch minimal `ble_device_base`). Restant M1 : flash
+  réel sur ESP32-S3 (poste local, port COM12/CH343) + confirmation visuelle
+  d'advertising via un scanner BLE téléphone -- pas encore fait depuis le bastion
+  (pas d'USB).
 - **M2** — Parité scan (`esp32_ble_tracker`).
 - **M3** — Parité GATT bout-en-bout : `bluetooth_connection` (chemin `bluetooth_proxy`/HA,
   jalon prioritaire) ET `esp32_ble_client` (chemin legacy `ble_client:`/`BLEClientNode`,
