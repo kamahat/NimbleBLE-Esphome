@@ -1,0 +1,49 @@
+{
+  "description": "Source unique de vérité pour la state machine de connexion/découverte BLE par slot. Deux générateurs en dérivent : tools/gen_state_machine/gen_tla.py (spec/ble_state_machine.tla, PlusCal) et tools/gen_state_machine/gen_cpp.py (components/nimble_ble/nimble_fsm/ble_connection_fsm.h/.cpp). Ne jamais éditer les fichiers générés directement.",
+  "states": ["Idle", "Scanning", "Connecting", "Discovering", "Ready", "Disconnecting", "Backoff"],
+  "events": [
+    "scan_start",
+    "adv_matched",
+    "connect_request",
+    "gap_connect_ok",
+    "gap_connect_fail",
+    "connect_timeout",
+    "discover_start",
+    "discover_done",
+    "discover_timeout",
+    "disconnect_request",
+    "gap_disconnect_evt",
+    "backoff_elapsed",
+    "drop_unsolicited_pairing"
+  ],
+  "variables": {
+    "state": "État courant du slot",
+    "clock": "Horloge logique (ms) depuis l'entrée dans l'état courant",
+    "deadline": "Deadline (ms) fixée à l'entrée d'un état Connecting/Discovering ; absente ailleurs",
+    "backoff_count": "Nombre de tentatives de reconnexion consécutives échouées pour cette adresse"
+  },
+  "transitions": [
+    {"from": "Idle", "event": "scan_start", "to": "Scanning"},
+    {"from": "Scanning", "event": "adv_matched", "to": "Idle", "note": "adv_matched seul ne connecte pas ; déclenche connect_request via la politique de pairing/allowlist (voir docs/SECURITY.md)"},
+    {"from": "Idle", "event": "connect_request", "to": "Connecting", "set_deadline_ms": 5000},
+    {"from": "Connecting", "event": "gap_connect_ok", "to": "Discovering", "set_deadline_ms": 8000},
+    {"from": "Connecting", "event": "gap_connect_fail", "to": "Backoff"},
+    {"from": "Connecting", "event": "connect_timeout", "to": "Backoff"},
+    {"from": "Discovering", "event": "discover_done", "to": "Ready"},
+    {"from": "Discovering", "event": "discover_timeout", "to": "Backoff"},
+    {"from": "Discovering", "event": "gap_disconnect_evt", "to": "Backoff"},
+    {"from": "Ready", "event": "disconnect_request", "to": "Disconnecting"},
+    {"from": "Ready", "event": "gap_disconnect_evt", "to": "Backoff"},
+    {"from": "Disconnecting", "event": "gap_disconnect_evt", "to": "Idle"},
+    {"from": "Backoff", "event": "backoff_elapsed", "to": "Idle"},
+    {"from": "Connecting", "event": "drop_unsolicited_pairing", "to": "Backoff", "note": "pairing non sollicité hors allowlist (propriété NoUnauthorizedPairing)"}
+  ],
+  "properties": {
+    "TypeOK": "Toutes les variables restent dans leur domaine déclaré.",
+    "BoundedWait": "state \\in {Connecting, Discovering} => clock <= deadline, jamais violé avant qu'une transition Timeout ne soit prise.",
+    "EventuallyExits": "Sous fairness faible sur l'action Timeout : []<>(state \\notin {Connecting, Discovering}) -- toute incursion dans Connecting/Discovering finit par en sortir.",
+    "NoUnauthorizedPairing": "state' = Ready => address \\in Allowlist.",
+    "ReachabilityNote": "TLC seul ne détecte que le deadlock total ; tools/gen_state_machine/check_reachability.py vérifie en plus qu'aucun cycle n'est confiné entièrement dans {Connecting, Discovering}."
+  },
+  "_status": "Squelette initial (M0/M6 à finaliser) -- les deadlines (5000ms/8000ms) sont des valeurs de départ à ajuster en M3 contre les mesures réelles du protocole HARDWARE_VALIDATION.md, pas des constantes définitives."
+}

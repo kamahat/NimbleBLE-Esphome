@@ -1,0 +1,9 @@
+.esphome/
+.pio-core/
+.pio/
+.venv/
+__pycache__/
+*.pyc
+build/
+.vscode/
+secrets.yaml

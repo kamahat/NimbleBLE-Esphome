@@ -1,0 +1,26 @@
+name: Basic checks
+
+# Vérifications qui fonctionnent dès M0, sans dépendre d'un environnement ESP-IDF ni de
+# code composant existant. Les workflows compile-matrix.yml (M1+), host-unit-tests.yml (M1+)
+# et state-machine-check.yml (M6) seront ajoutés quand les jalons correspondants seront atteints
+# (voir docs/ARCHITECTURE.md) -- volontairement absents pour l'instant plutôt que présents et
+# systématiquement rouges.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  no-listener-invariant:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check no independent network listener (docs/SECURITY.md invariant)
+        run: bash tools/ci/check_no_listener.sh
+
+  spec-json-valid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate spec/transitions.json is well-formed
+        run: python3 -c "import json; json.load(open('spec/transitions.json'))"
