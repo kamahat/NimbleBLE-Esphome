@@ -77,4 +77,56 @@ fois.
 
 ## Résultats (à compléter au fil des essais)
 
-_Aucun essai NimBLE encore réalisé — section à remplir en M4._
+### M1 — bring-up NimBLE confirmé sur matériel réel (2026-09-01)
+
+Carte utilisée : **XIAO ESP32-C5** (déjà caractérisée dans
+`project-boks-esp32c5-antenna` — antenne stock, pas besoin de l'antenne
+externe pour ce test d'advertising simple), MAC `38:44:be:ba:09:12` (BLE) /
+`38:44:be:ff:fe:ba:09:10` (base), port natif USB-Serial/JTAG (pas de puce
+CH34x — reconnu directement par Windows, VID `303A`/PID `1001`).
+
+Flashé avec `tests/components/esp32_ble/test.esp32c5-idf.yaml`
+(`esphome run ... --device COM<n>`, ESPHome 2026.8.2, ESP-IDF 5.5.5, cible
+`esp32c5`). Logs série capturés (voir gotchas ci-dessous) :
+
+```
+[C][component:164]: Setup esp32_ble took 636ms
+[I][app:117]: setup() finished successfully!
+[D][nimble_ble:038][nimble_host]: NimBLE host synced
+[C][esp32_ble.nimble:066]: BLE (NimBLE):
+  MAC address: 38:44:BE:BA:09:12
+  Active: YES
+  Advertising: YES
+```
+
+**Confirmé** : le contrôleur/host NimBLE s'initialise, se synchronise, et
+l'advertising démarre — sur un vrai ESP32-C5, pas seulement en compilation.
+Reste à confirmer visuellement via un scanner BLE téléphone que "Nimble M1
+Test C5" est bien visible en l'air (pas fait depuis cette session — aucun
+accès à un scanner BLE externe depuis l'environnement d'exécution).
+
+**Gotchas rencontrés (à ne pas re-découvrir)** :
+- `esphome logs` n'a produit **aucune sortie** pendant 15s à chaque tentative
+  (deux essais), malgré un flash et un firmware fonctionnels confirmés
+  ensuite. Contournement : lecture série brute (`System.IO.Ports.SerialPort`
+  en PowerShell) avec un toggle DTR/RTS explicite avant lecture a immédiatement
+  produit les logs complets dès le boot ROM. Cause précise non élucidée
+  (probablement un problème de timing/relance du port natif USB-Serial/JTOG
+  après le "Hard resetting via RTS pin" d'esptool) — mais le contournement est
+  fiable, à réutiliser si `esphome logs` reste silencieux sur ce type de carte.
+- **`logger: hardware_uart: USB_SERIAL_JTAG` est obligatoire** sur cette carte
+  — sans cette option explicite, ESPHome ne route pas la console sur le port
+  USB natif pour le profil de board générique `esp32-c5-devkitc-1` (UART0
+  physique par défaut, non connecté sur ce module).
+- L'avertissement esptool *"Crystal frequency mismatch... configured for
+  0MHz"* persiste même avec `CONFIG_XTAL_FREQ_48: 'y'` dans
+  `sdkconfig_options` (le sdkconfig généré garde `CONFIG_XTAL_FREQ_AUTO=y`
+  quoi qu'il arrive) — **sans conséquence pratique constatée** : les logs et
+  le comportement runtime sont corrects avec AUTO. Ne pas perdre de temps à
+  re-creuser cet avertissement à l'avenir sauf symptôme réel.
+- Build+flash faits en local (`E:/Dev/NimbleBLE-Esphome-flash`, clone
+  temporaire jetable) via un venv Python local dédié (`python -m venv`,
+  Python 3.13 système) — **jamais via Git Bash** pour les commandes
+  `esphome compile`/`run`/`upload`/`logs` : ESP-IDF refuse explicitement
+  l'environnement MSYS/Mingw (`MSys/Mingw is not supported`). Utiliser
+  PowerShell natif pour toute invocation esphome/ESP-IDF sur ce poste.

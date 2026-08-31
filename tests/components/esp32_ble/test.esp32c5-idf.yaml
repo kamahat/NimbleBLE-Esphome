@@ -1,0 +1,33 @@
+esphome:
+  name: nimble-m1-test-c5
+
+esp32:
+  board: esp32-c5-devkitc-1
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      # CONFIG_XTAL_FREQ_48 does not override CONFIG_XTAL_FREQ_AUTO in
+      # practice (verified: generated sdkconfig kept AUTO=y regardless) --
+      # harmless esptool warning at flash time ("Crystal frequency mismatch...
+      # configured for 0MHz"), AUTO works correctly at runtime on this board
+      # (confirmed via serial logs). Kept here to document the attempt and
+      # save a future session from re-investigating it as a real bug.
+      CONFIG_XTAL_FREQ_48: 'y'
+
+external_components:
+  - source:
+      type: local
+      path: ../../../components
+    components: [esp32_ble, nimble_ble, ble_device_base]
+
+esp32_ble:
+  name: "Nimble M1 Test C5"
+  advertising: true
+
+# USB_SERIAL_JTAG required explicitly: this board's console is native USB
+# (no separate UART bridge chip), and ESPHome does not default to it for the
+# generic esp32-c5-devkitc-1 board profile -- without this, esphome logs
+# opens the port but nothing is ever received (verified: 15s of total
+# silence with the default UART0 hardware_uart).
+logger:
+  hardware_uart: USB_SERIAL_JTAG
