@@ -1,0 +1,30 @@
+esphome:
+  name: nimble-m2-test-c5
+
+esp32:
+  board: esp32-c5-devkitc-1
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_XTAL_FREQ_48: 'y'
+
+external_components:
+  - source:
+      type: local
+      path: ../../../components
+    components: [esp32_ble, nimble_ble, ble_device_base, esp32_ble_tracker]
+
+esp32_ble:
+  name: "Nimble M2 Test C5"
+
+esp32_ble_tracker:
+  scan_parameters:
+    duration: 30s
+  on_ble_advertise:
+    - then:
+        - lambda: |-
+            ESP_LOGI("m2_test", "Adv: %s RSSI=%d", x.address_str_to((char *) alloca(18)), x.get_rssi());
+
+logger:
+  level: VERY_VERBOSE
+  hardware_uart: USB_SERIAL_JTAG

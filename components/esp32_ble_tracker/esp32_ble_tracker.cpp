@@ -70,7 +70,7 @@ void ESP32BLETracker::start_scan_() {
   params.filter_duplicates = 0;  // we dedup ourselves (DiscoveredDeviceLog); NimBLE dedup would
                                  // also drop the scan-response half of a pair we need to merge.
 
-  int rc = ble_gap_disc(BLE_OWN_ADDR_PUBLIC, this->scan_duration_ * 10 /* 0.625ms units -> ms, rough */,
+  int rc = ble_gap_disc(BLE_OWN_ADDR_PUBLIC, this->scan_duration_ * 1000 /* scan_duration_ is in whole seconds (CONF_DURATION), ble_gap_disc wants ms */,
                         &params, &ESP32BLETracker::gap_event_handler_, this);
   if (rc != 0) {
     ESP_LOGE(TAG, "ble_gap_disc failed: %d", rc);
