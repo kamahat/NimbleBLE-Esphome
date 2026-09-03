@@ -1,6 +1,6 @@
 // Host-buildable unit test (no ESP-IDF): g++ -std=c++20 -I components/nimble_ble
-// tests/unit/test_ble_connection_fsm.cpp components/nimble_ble/nimble_fsm/ble_connection_fsm.cpp
-#include "nimble_fsm/ble_connection_fsm.h"
+// tests/unit/test_ble_connection_fsm.cpp components/nimble_ble/ble_connection_fsm.cpp
+#include "ble_connection_fsm.h"
 
 #include <cassert>
 #include <cstdio>

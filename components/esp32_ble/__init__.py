@@ -58,3 +58,7 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_BT_CONTROLLER_ENABLED", True)
 
     cg.add_define("USE_ESP32_BLE")
+    # Discriminates our NimBLE backend from a Bluedroid one in
+    # bluetooth_connection_gatt_backend.h -- USE_ESP32_BLE alone is not
+    # enough, since core emits it for either stack.
+    cg.add_define("USE_ESP32_BLE_NIMBLE")

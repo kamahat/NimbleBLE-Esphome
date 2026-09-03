@@ -7,7 +7,7 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 SPEC = json.loads((ROOT / "spec" / "transitions.json").read_text(encoding="utf-8"))
-OUT_DIR = ROOT / "components" / "nimble_ble" / "nimble_fsm"
+OUT_DIR = ROOT / "components" / "nimble_ble"
 
 
 def screaming(name: str) -> str:

@@ -1,0 +1,38 @@
+esphome:
+  name: nimble-m3-test-c5
+  includes:
+    - test_listener.h
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          // A deliberately unreachable address (no such device nearby): the
+          // M3 exit criterion is a bounded exit from Connecting/Discovering,
+          // not a successful connection.
+          static const uint64_t unreachable_addr = 0x0123456789ABULL;
+          id(gatt_client)->set_listener(&g_test_listener);
+          int rc = id(gatt_client)->connect(unreachable_addr, 0 /* BLE_ADDR_TYPE_PUBLIC */);
+          ESP_LOGI("m3_test", "connect() rc=%d", rc);
+
+esp32:
+  board: esp32-c5-devkitc-1
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_XTAL_FREQ_48: 'y'
+
+external_components:
+  - source:
+      type: local
+      path: ../../../components
+    components: [esp32_ble, nimble_ble, ble_device_base, bluetooth_connection]
+
+esp32_ble:
+  name: "Nimble M3 Test C5"
+
+bluetooth_connection:
+  id: gatt_client
+
+logger:
+  level: VERY_VERBOSE
+  hardware_uart: USB_SERIAL_JTAG
