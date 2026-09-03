@@ -205,6 +205,20 @@ int NimbleGattEngine::connect(uint64_t address, uint8_t addr_type) {
   peer_addr.type = addr_type;
   uint64_to_mac_lsb_first(address, peer_addr.val);
 
+  // NimBLE flatly refuses to start a connection while a discovery (scan)
+  // procedure is running -- ble_gap_connect() returns BLE_HS_EBUSY, silently
+  // from this engine's perspective (confirmed on real hardware: a tracker
+  // scanning continuously swallowed every connect() call here with no
+  // observable effect until this cancel was added). Cancelling costs nothing
+  // when nothing was running (BLE_HS_EALREADY, ignored) and is safe when a
+  // tracker owns the scan: cancelling here fires the exact same
+  // BLE_GAP_EVENT_DISC_COMPLETE a normal scan timeout would, which
+  // esp32_ble_tracker already treats as "scan ended" (dispatcher_.on_scan_end(),
+  // scanner_state_ -> IDLE) -- its own loop() then restarts the scan on its
+  // own next tick if scan_continuous_ is set, with no coupling from this
+  // engine to the tracker needed in either direction.
+  ble_gap_disc_cancel();
+
   struct ble_gap_conn_params conn_params;
   memset(&conn_params, 0, sizeof(conn_params));
   conn_params.scan_itvl = 0x0010;

@@ -130,3 +130,66 @@ accès à un scanner BLE externe depuis l'environnement d'exécution).
   `esphome compile`/`run`/`upload`/`logs` : ESP-IDF refuse explicitement
   l'environnement MSYS/Mingw (`MSys/Mingw is not supported`). Utiliser
   PowerShell natif pour toute invocation esphome/ESP-IDF sur ce poste.
+
+
+## M4 — bug réel trouvé et corrigé : connect() bloqué en silence pendant un scan (2026-09-03)
+
+Test ad hoc (non commité, `tmp/m4_real_connect/`, gitignoré) : cibler dynamiquement
+le premier appareil BLE réel assez fort (RSSI seuil variable) vu par
+`esp32_ble_tracker` et tenter un vrai `connect()`/`discover_services()` dessus via
+`bluetooth_connection::NimbleGattClient`, sur le même XIAO ESP32-C5.
+
+**Symptôme observé** : avec `esp32_ble_tracker:` (scan continu actif) et
+`bluetooth_connection:` dans le même firmware, `connect()` était appelé (log
+"Targeting..." absent par endroits à cause de la congestion du port série sous
+VERY_VERBOSE, voir plus bas) mais **plus aucun événement ne suivait jamais** --
+ni `on_connection_state`, ni le moindre signe côté NimBLE. Diagnostic par ajout
+de logs directement dans `parse_device()` (confirmé appelé, RSSI correct) et
+dans le lambda lui-même (confirmé appelé avec RSSI valides, y compris > seuil)
+a éliminé un bug de câblage trigger/automation -- la fonction s'exécutait bien,
+`connect()` était bien appelé, mais rien ne se produisait après.
+
+**Cause racine** (confirmée en ajoutant un `stop_scan()` manuel avant le
+`connect()` de test, qui a immédiatement débloqué un vrai résultat
+asynchrone) : NimBLE refuse categoriquement `ble_gap_connect()` **pendant
+qu'une procédure de découverte (scan) est en cours** -- documenté
+(`BLE_HS_EBUSY if initiating a connection is not possible because scanning is
+in progress`) mais jamais géré par `NimbleGattEngine::connect()`, qui appelait
+`ble_gap_connect()` sans jamais vérifier ni gérer l'état du scan. Sans ce fix,
+**tout chemin GATT client (esp32_ble_client ET bluetooth_connection/
+bluetooth_proxy) échoue en silence dès qu'un scan continu tourne en même
+temps** -- exactement le cas d'usage central de `bluetooth_proxy` (scanner en
+continu ET accepter des connexions).
+
+**Fix** (`components/nimble_ble/nimble_gattc.cpp`, `NimbleGattEngine::connect()`) :
+appel de `ble_gap_disc_cancel()` avant `ble_gap_connect()`, inconditionnel et
+sans dépendance vers le tracker. Ce choix évite tout couplage direct engine <->
+tracker : annuler un scan en cours génère le même `BLE_GAP_EVENT_DISC_COMPLETE`
+qu'une fin de scan normale, qu'`esp32_ble_tracker` traite déjà correctement
+(`dispatcher_.on_scan_end()`, `scanner_state_` -> `IDLE`) ; son propre `loop()`
+relance ensuite le scan tout seul au prochain tick si `scan_continuous_` est
+actif (mécanisme M2 réutilisé tel quel, aucune modification côté tracker
+nécessaire). Confirmé après fix : plusieurs cycles connect() réels contre des
+appareils BLE effectifs à proximité produisent maintenant une réponse HCI
+asynchrone authentique (`error=13`/timeout borné correct, ou d'autres codes
+HCI selon l'appareil ciblé -- ex. `error=531`, un code d'échec HCI réel plutôt
+que le silence total observé avant le fix).
+
+**Reste non prouvé dans cette passe** : un connect+discover **réussi** contre
+un pair réellement connectable (les appareils environnants identifiés --
+iBeacons, balises Microsoft Swift Pair -- sont typiquement non-connectables
+par conception). Le chemin d'échec borné est prouvé de bout en bout contre du
+matériel réel ; le chemin de succès reste à confirmer avec un vrai pair GATT
+connectable à proximité (ou directement le Boks, hors périmètre de cette
+passe -- voir décision utilisateur du 2026-09-03).
+
+**Gotcha série reconfirmé** (déjà documenté M1, reproduit plusieurs fois ici) :
+la lecture série brute post-reset reste intermittente sur ce port
+USB-Serial/JTAG natif -- certaines relectures immédiates après flash ne
+produisent rien du tout (le firmware tourne, mais aucune sortie série
+n'apparaît), sans lien avec le code testé. Un `esptool.py ... chip_id` (reset
+propre, sans reflash) juste avant la lecture rétablit systématiquement le flux
+dans cette session ; à défaut, réessayer une seconde fois suffit généralement.
+Ne pas confondre ce symptôme avec un vrai crash/watchdog (aucun indicateur de
+reset trouvé dans les captures concernées : pas de bannière de boot répétée,
+pas de "Guru Meditation Error").
