@@ -182,19 +182,41 @@ ESPHome core, pas une invention de ce projet.
   réel sur ESP32-S3 (poste local, port COM12/CH343) + confirmation visuelle
   d'advertising via un scanner BLE téléphone -- pas encore fait depuis le bastion
   (pas d'USB).
-- **M2** — Parité scan : **compile vérifié 2026-09-01** (`esp32_ble_tracker` +
+- **M2** — Parité scan : **TERMINÉ 2026-09-03** (`esp32_ble_tracker` +
   triggers `on_ble_advertise`/`on_ble_service_data_advertise`/
-  `on_ble_manufacturer_data_advertise`/`on_scan_end`). Écart architectural assumé :
-  contrairement à Bluedroid (un seul callback GAP global), NimBLE attend un
-  callback par opération (`ble_gap_disc`, `ble_gap_connect`, `ble_gap_adv_start`) --
-  le tracker possède donc directement sa session `ble_gap_disc()` au lieu de
-  s'enregistrer sur un dispatch central `esp32_ble` (les helpers Python
-  `esp32_ble.register_gap_event_handler`/etc. du core n'existent pas dans notre
-  surcharge -- décision assumée, pas un oubli). NimBLE livrant advertisement et
-  scan response comme deux événements séparés (contrairement à Bluedroid qui les
-  fusionne déjà), le tracker réutilise `ble_device_base::ScanResponseMerger`/
-  `AdvDispatcher` (déjà vendorés, prévus exactement pour ce cas). Reste M2 : flash
-  matériel + vérification qu'un vrai appareil BLE proche est détecté (pas encore fait).
+  `on_ble_manufacturer_data_advertise`/`on_scan_end`, validé matériel sur ESP32-C5).
+  Écart architectural assumé : contrairement à Bluedroid (un seul callback GAP
+  global), NimBLE attend un callback par opération (`ble_gap_disc`, `ble_gap_connect`,
+  `ble_gap_adv_start`) -- le tracker possède donc directement sa session
+  `ble_gap_disc()` au lieu de s'enregistrer sur un dispatch central `esp32_ble`
+  (les helpers Python `esp32_ble.register_gap_event_handler`/etc. du core
+  n'existent pas dans notre surcharge -- décision assumée, pas un oubli). NimBLE
+  livrant advertisement et scan response comme deux événements séparés
+  (contrairement à Bluedroid qui les fusionne déjà), le tracker réutilise
+  `ble_device_base::ScanResponseMerger`/`AdvDispatcher` (déjà vendorés, prévus
+  exactement pour ce cas).
+
+  **Bug M2 trouvé + corrigé sur matériel réel (2026-09-03)** : premier flash sur
+  ESP32-C5, scan/timing corrects (`Scan complete` à l'heure) mais **zéro
+  advertisement capturé** malgré 10+ sources BLE réelles à moins de 10m -- signal
+  fort que ce n'était pas l'antenne (contra `project-boks-esp32c5-antenna`, qui
+  documentait déjà une carte+antenne faibles, mais pas zéro-sur-dix-sources-proches).
+  Cause racine (lecture directe du code, pas supposée) : `ble_device_base`
+  n'active son stockage de listeners (`StaticVector` dans `scan_response_merger.h`,
+  boucle de dispatch dans `AdvDispatcher::dispatch()`) que si `to_code()` d'un
+  consommateur appelle le `cg.slot_counter(LISTENER_COUNT_DEFINE)` requis
+  ("no requests, no define: the guarded storage ... compile out entirely",
+  docstring de `cpp_helpers.slot_counter`). `esp32_ble_tracker/__init__.py`
+  construisait ses 4 triggers à la main sans jamais appeler ce compteur --
+  `ESPHOME_BLE_DEVICE_BASE_LISTENER_COUNT` n'était donc **jamais défini**, et tout
+  le bloc d'enregistrement/dispatch des listeners compilait à vide : chaque
+  advertisement réelle atteignait bien `dispatch()`, mais y était silencieusement
+  jetée, indépendamment de l'antenne. Fix (commit `af4b40b`) : ajout de
+  `ble_device_base.request_listener_slot()` (même patron que `request_gatt_client()`
+  juste au-dessus dans le même fichier) appelé une fois par trigger construit dans
+  `esp32_ble_tracker::to_code()`. Vérifié sur la même carte après recompilation
+  bastion + reflash local : **19 appareils BLE distincts capturés** sur une seule
+  fenêtre de scan de 30s (contre 0 avant le fix).
 - **M3** — Parité GATT bout-en-bout : `bluetooth_connection` (chemin `bluetooth_proxy`/HA,
   jalon prioritaire) ET `esp32_ble_client` (chemin legacy `ble_client:`/`BLEClientNode`,
   dans le périmètre v1 par décision utilisateur) ; découverte bornée dans les deux.
