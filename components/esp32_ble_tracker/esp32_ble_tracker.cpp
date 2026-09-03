@@ -76,7 +76,7 @@ void ESP32BLETracker::start_scan_() {
     ESP_LOGE(TAG, "ble_gap_disc failed: %d", rc);
     return;
   }
-  this->scanner_state_ = ScannerState::RUNNING;
+  this->set_scanner_state_(ScannerState::RUNNING);
   ESP_LOGV(TAG, "Scan started.");
 }
 
@@ -89,7 +89,7 @@ void ESP32BLETracker::stop_scan_() {
   }
   this->merger_.flush();
   this->dispatcher_.on_scan_end();
-  this->scanner_state_ = ScannerState::IDLE;
+  this->set_scanner_state_(ScannerState::IDLE);
 }
 
 int ESP32BLETracker::gap_event_handler_(struct ble_gap_event *event, void *arg) {
@@ -120,7 +120,7 @@ int ESP32BLETracker::handle_gap_event_(struct ble_gap_event *event) {
       ESP_LOGV(TAG, "Scan complete (reason=%d)", event->disc_complete.reason);
       this->merger_.flush();
       this->dispatcher_.on_scan_end();
-      this->scanner_state_ = ScannerState::IDLE;
+      this->set_scanner_state_(ScannerState::IDLE);
       return 0;
     }
     default:

@@ -1,0 +1,35 @@
+esphome:
+  name: nimble-m4-proxy-test-c5
+
+esp32:
+  board: esp32-c5-devkitc-1
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_XTAL_FREQ_48: 'y'
+
+external_components:
+  - source:
+      type: local
+      path: ../../../components
+    components: [esp32_ble, nimble_ble, ble_device_base, esp32_ble_tracker,
+                 bluetooth_connection, bluetooth_proxy]
+
+esp32_ble_tracker:
+  id: the_tracker
+
+bluetooth_proxy:
+  active: true
+  connection_slots: 2
+
+wifi:
+  ssid: "placeholder"
+  password: "placeholder123"
+
+api:
+  encryption:
+    key: "L+ExiIC/qHodPTd/G1wJDwTGWXVfd+XkYsq4Qihcyq8="
+
+logger:
+  level: VERY_VERBOSE
+  hardware_uart: USB_SERIAL_JTAG

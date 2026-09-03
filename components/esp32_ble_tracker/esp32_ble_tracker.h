@@ -77,15 +77,41 @@ class ESP32BLETracker final : public Component, public Parented<ESP32BLE> {
   void start_scan();
   void stop_scan();
   ScannerState get_scanner_state() const { return this->scanner_state_; }
+#ifdef USE_BLE_SCANNER_STATE_CALLBACK
+  // Required by BLEHubContract exactly when this define is set (ble_hub.h) --
+  // bluetooth_proxy sets it (M4) so it can push scanner-state transitions to
+  // Home Assistant instead of polling get_scanner_state(). A push hub must
+  // emit a transition for every accepted or refused mode request; this
+  // tracker never refuses one (request_scan_mode() always returns false --
+  // no switching to honor), so the callback only ever fires from the real
+  // RUNNING/IDLE transitions in start_scan_()/stop_scan_()/on scan-complete.
+  void set_scanner_state_callback(ble_device_base::ScannerStateCallback callback) {
+    this->scanner_state_callback_ = callback;
+  }
+#endif
 
  protected:
   static int gap_event_handler_(struct ble_gap_event *event, void *arg);
   int handle_gap_event_(struct ble_gap_event *event);
   void start_scan_();
   void stop_scan_();
+  // Sole assignment site for scanner_state_ -- centralizes the
+  // ScannerStateCallback invocation so every transition reaches it exactly
+  // once, from a single place, rather than repeating the is_set()+invoke()
+  // pair at each of the three call sites that used to assign directly.
+  void set_scanner_state_(ScannerState state) {
+    this->scanner_state_ = state;
+#ifdef USE_BLE_SCANNER_STATE_CALLBACK
+    if (this->scanner_state_callback_.is_set())
+      this->scanner_state_callback_.invoke(state);
+#endif
+  }
 
   ble_device_base::AdvDispatcher dispatcher_;
   ble_device_base::ScanResponseMerger merger_;
+#ifdef USE_BLE_SCANNER_STATE_CALLBACK
+  ble_device_base::ScannerStateCallback scanner_state_callback_{};
+#endif
 
   uint32_t scan_duration_{300};
   // Units: 0.625ms controller ticks (matches ble_device_base::to_ble_units).

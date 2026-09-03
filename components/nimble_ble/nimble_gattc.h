@@ -31,6 +31,29 @@
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
 
+// NimBLE's porting-layer log_common.h #defines bare, unprefixed macros --
+// LOG_LEVEL_ERROR/WARN/INFO/DEBUG/NONE -- that collide directly with
+// esphome::api::LogLevel's enum values of the identical names (api_pb2.h).
+// Any translation unit that includes both this header and api_pb2.h (M4:
+// bluetooth_connection_hub.cpp is the first to need both) fails with
+// "expected class-name before '{'" deep inside the corrupted enum, because
+// the preprocessor substitutes the numeric macro value into the enum
+// declaration's identifier position. Undefined here, at the point we pull
+// NimBLE's headers in, so no downstream include order can hit this by
+// surprise (confirmed on real hardware build, not a hypothetical).
+#undef LOG_VERSION_V3
+#undef LOG_TYPE_STREAM
+#undef LOG_TYPE_MEMORY
+#undef LOG_TYPE_STORAGE
+#undef LOG_LEVEL_DEBUG
+#undef LOG_LEVEL_INFO
+#undef LOG_LEVEL_WARN
+#undef LOG_LEVEL_ERROR
+#undef LOG_LEVEL_CRITICAL
+#undef LOG_LEVEL_NONE
+#undef LOG_LEVEL_MAX
+#undef LOG_LEVEL_STR
+
 #include <vector>
 
 namespace esphome::nimble_ble {

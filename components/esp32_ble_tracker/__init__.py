@@ -41,8 +41,13 @@ CODEOWNERS = ["@kamahat"]
 ble_device_base.register_hub_provider("esp32_ble_tracker")
 
 esp32_ble_tracker_ns = cg.esphome_ns.namespace("esp32_ble_tracker")
+# ble_device_base.BLEHub listed as a base purely so cv.use_id(BLEHub)
+# resolves an ESP32BLETracker instance (Python-side ID-matching only --
+# BLEHubContract is a compile-time C++ concept, no virtual base needed
+# there; discovered missing when bluetooth_proxy's BLE_DEVICE_SCHEMA first
+# tried to cv.use_id(BLEHub) against our tracker, M4).
 ESP32BLETracker = esp32_ble_tracker_ns.class_(
-    "ESP32BLETracker", cg.Component, cg.Parented.template(esp32_ble.ESP32BLE)
+    "ESP32BLETracker", ble_device_base.BLEHub, cg.Component, cg.Parented.template(esp32_ble.ESP32BLE)
 )
 ESPBTDevice = ble_device_base.ble_device_base_ns.class_("ESPBTDevice")
 ESPBTDeviceConstRef = ESPBTDevice.operator("ref").operator("const")
