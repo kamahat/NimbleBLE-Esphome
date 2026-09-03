@@ -217,9 +217,38 @@ ESPHome core, pas une invention de ce projet.
   `esp32_ble_tracker::to_code()`. Vérifié sur la même carte après recompilation
   bastion + reflash local : **19 appareils BLE distincts capturés** sur une seule
   fenêtre de scan de 30s (contre 0 avant le fix).
-- **M3** — Parité GATT bout-en-bout : `bluetooth_connection` (chemin `bluetooth_proxy`/HA,
-  jalon prioritaire) ET `esp32_ble_client` (chemin legacy `ble_client:`/`BLEClientNode`,
-  dans le périmètre v1 par décision utilisateur) ; découverte bornée dans les deux.
+- **M3** — Parité GATT bout-en-bout : **EN COURS, chemin prioritaire TERMINÉ 2026-09-03.**
+  Moteur partagé `components/nimble_ble/` : `nimble_event.h/.cpp` (file d'événements
+  thread-safe -- callbacks GAP/GATT NimBLE marshalés depuis la tâche host NimBLE vers la
+  boucle principale ESPHome ; risque déjà signalé mais différé en M1, M2 s'en sortait sans
+  car le scan est read-only, un client GATT stateful non), `nimble_uuid.h`, `nimble_gattc.h/.cpp`
+  (`NimbleGattEngine` : connect/discover/read/write sur `host/ble_gap.h`+`host/ble_gatt.h` bruts,
+  découverte séquentielle profondeur-d'abord car NimBLE n'autorise qu'une procédure GATT à la
+  fois par connexion, enveloppe `BleConnectionFsm` pour la deadline bornée Connecting/Discovering).
+  `ble_connection_fsm.h/.cpp` déplacé hors d'un sous-répertoire `nimble_fsm/` : la copie de fichiers
+  des `external_components` d'ESPHome est plate (non récursive) -- découvert par le premier compile
+  M3 qui échouait, le fichier imbriqué étant simplement absent de l'arbre de build.
+  `components/bluetooth_connection/` (nouveau, ESP32/NimBLE uniquement -- ni RP2 ni Bluedroid ne
+  sont dans le périmètre de ce projet) : `bluetooth_connection_nimble.h` (`NimbleGattClient`,
+  enveloppe `Component` fine autour de `NimbleGattEngine`, satisfait `BLEGattConnectionContract`
+  confirmé par la compilation propre de son `static_assert`), `bluetooth_connection_gatt_backend.h`
+  (surcharge liant `USE_ESP32_BLE_NIMBLE` -- nouveau define distinct de `USE_ESP32_BLE` que le core
+  émet pour n'importe quelle pile, ajouté à `esp32_ble/__init__.py`), `__init__.py` minimal
+  (clé `bluetooth_connection:` autonome pour test compile/matériel ; `bluetooth_connection_hub.h/.cpp`,
+  la façade côté `bluetooth_proxy`, reste hors périmètre M3, sera fait en M4).
+
+  **Validation matérielle (même XIAO ESP32-C5)** : connexion vers une adresse volontairement
+  injoignable -- la deadline Connecting (5000ms) déclenche sa propre sortie bornée
+  (`on_connection_state(connected=false, error=BLE_HS_ETIMEOUT)`) au lieu d'un hang, le correctif
+  direct du fait que `esp_ble_gattc_search_service()` n'a aujourd'hui aucune deadline propre
+  (`docs/HARDWARE_VALIDATION.md`). Un vrai bug trouvé et corrigé dans ce test : l'événement CONNECT
+  asynchrone de la tentative annulée arrive plus tard via la file et rapportait le même résultat
+  une seconde fois -- gardé par `connect_result_reported_`, revérifié propre (un seul appel
+  `on_connection_state`) après correctif.
+
+  **Reste M3** : `esp32_ble_client` (chemin legacy `ble_client:`/`BLEClientNode`, dans le périmètre
+  v1 par décision utilisateur) -- porter le même `NimbleGattEngine` dessous, pas commencé dans cette
+  passe.
 - **M4** — `bluetooth_proxy` bout-en-bout + validation matérielle réelle (voir
   HARDWARE_VALIDATION.md).
 - **M5** — Rôle serveur GATT (`esp32_ble_server`).
