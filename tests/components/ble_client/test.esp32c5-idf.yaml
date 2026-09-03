@@ -1,0 +1,31 @@
+esphome:
+  name: nimble-m3-ble-client-test-c5
+
+esp32:
+  board: esp32-c5-devkitc-1
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_XTAL_FREQ_48: 'y'
+
+external_components:
+  - source:
+      type: local
+      path: ../../../components
+    components: [esp32_ble, nimble_ble, ble_device_base, esp32_ble_client, ble_client]
+
+esp32_ble:
+  name: "Nimble BLEClient C5"
+
+ble_client:
+  - mac_address: 01:23:45:67:89:AB  # deliberately unreachable
+    id: my_client
+    auto_connect: true
+    on_connect:
+      - logger.log: "on_connect fired"
+    on_disconnect:
+      - logger.log: "on_disconnect fired"
+
+logger:
+  level: VERY_VERBOSE
+  hardware_uart: USB_SERIAL_JTAG

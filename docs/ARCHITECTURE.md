@@ -246,9 +246,24 @@ ESPHome core, pas une invention de ce projet.
   une seconde fois -- gardé par `connect_result_reported_`, revérifié propre (un seul appel
   `on_connection_state`) après correctif.
 
-  **Reste M3** : `esp32_ble_client` (chemin legacy `ble_client:`/`BLEClientNode`, dans le périmètre
-  v1 par décision utilisateur) -- porter le même `NimbleGattEngine` dessous, pas commencé dans cette
-  passe.
+  **Chemin legacy `esp32_ble_client`/`ble_client` : TERMINÉ 2026-09-03, validé matériel.**
+  `esp32_ble_client::BLEClientBase` (connexion/découverte/état, sur le même
+  `nimble_ble::NimbleGattEngine`) + `ble_client::BLEClient` (surface YAML `ble_client:`,
+  triggers `on_connect`/`on_disconnect` via une interface `BLEClientNode` neutre --
+  `on_ble_client_connected`/`on_ble_client_disconnected`, pas de
+  `gattc_event_handler`/`gap_event_handler` façon Bluedroid). Ajout à l'engine partagé :
+  `retry_connect()` (fait passer Backoff -> Idle via l'événement `BACKOFF_ELAPSED` avant de
+  relancer `connect()` -- Backoff n'accepte que cet événement, `connect()` seul y serait un
+  no-op silencieux) et `state()`. Boucle de reconnexion à délai fixe (5000ms) dans
+  `BLEClientBase::loop()` -- backoff exponentiel prévu M7, volontairement pas anticipé ici
+  (voir OVERRIDE_CAVEATS.md pour le reste du périmètre sciemment non repris : pairing/passkey,
+  `ble_client.ble_write`, plateformes sensor/switch/text_sensor).
+
+  **Validation matérielle (même XIAO ESP32-C5, `ble_client: mac_address: <adresse injoignable>`)** :
+  3 cycles complets observés dans une seule capture -- timeout borné (`error=13`), trigger
+  `on_disconnect` déclenché exactement une fois par cycle (aucune régression du double-appel
+  corrigé plus haut), puis nouvelle tentative après le délai de backoff fixe. Bout en bout,
+  chemin legacy compris.
 - **M4** — `bluetooth_proxy` bout-en-bout + validation matérielle réelle (voir
   HARDWARE_VALIDATION.md).
 - **M5** — Rôle serveur GATT (`esp32_ble_server`).

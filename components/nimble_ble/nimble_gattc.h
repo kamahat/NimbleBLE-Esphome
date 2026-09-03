@@ -48,6 +48,14 @@ class NimbleGattEngine {
   void set_listener(ble_device_base::GattClientListener *listener) { this->listener_ = listener; }
 
   int connect(uint64_t address, uint8_t addr_type);
+  /// Resumes from Backoff (fires BACKOFF_ELAPSED, the one transition
+  /// connect() itself cannot take -- Backoff only accepts that event per
+  /// spec/transitions.json) and immediately issues a fresh connect(). The
+  /// engine has no timer of its own for how long to wait in Backoff (by
+  /// design: only Connecting/Discovering carry a deadline) -- callers (e.g.
+  /// esp32_ble_client's retry loop) must only call this once they know the
+  /// backoff delay has elapsed.
+  int retry_connect(uint64_t address, uint8_t addr_type);
   int gatt_disconnect();
   bool cancel_gatt_disconnect();
   int discover_services();
@@ -74,6 +82,12 @@ class NimbleGattEngine {
   /// issues -- exposed so the static callback trampolines (in the .cpp) can
   /// be written once as free functions instead of per-instance thunks.
   void *event_owner() { return this; }
+
+  /// The FSM's current outer state (Idle/Connecting/Discovering/Ready/
+  /// Disconnecting/Backoff) -- exposed so a consumer (esp32_ble_client's
+  /// retry loop, future bluetooth_proxy diagnostics) can react to it without
+  /// duplicating the FSM's own bookkeeping.
+  BleConnState state() const { return this->fsm_.state(); }
 
  protected:
   friend void drain_gatt_events();

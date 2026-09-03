@@ -229,6 +229,12 @@ int NimbleGattEngine::connect(uint64_t address, uint8_t addr_type) {
   return 0;
 }
 
+int NimbleGattEngine::retry_connect(uint64_t address, uint8_t addr_type) {
+  if (this->fsm_.state() == BleConnState::BACKOFF)
+    this->fsm_.handle_event(BleConnEvent::BACKOFF_ELAPSED, millis());
+  return this->connect(address, addr_type);
+}
+
 int NimbleGattEngine::gatt_disconnect() {
   if (this->fsm_.state() == BleConnState::CONNECTING) {
     // No conn_handle yet: cancel the pending attempt itself. Its own

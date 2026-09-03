@@ -47,8 +47,40 @@ fichier toute fonctionnalité upstream sciemment non reprise (avec la raison).
 
 ## Fonctionnalités upstream sciemment non reprises (à tenir à jour)
 
-_Aucune entrée pour l'instant — ce fichier doit être mis à jour à chaque milestone qui
-touche un répertoire surchargé._
+### `esp32_ble_client` / `ble_client` (M3, 2026-09-03)
+
+- **Pairing/passkey** : `on_passkey_request`, `on_passkey_notification`,
+  `on_numeric_comparison_request`, `ble_client.passkey_reply`,
+  `ble_client.numeric_comparison_reply`, `ble_client.remove_bond` -- aucun n'est repris.
+  `BLEClientBase`/`nimble_ble::NimbleGattEngine` exposent `pair()`
+  (`ble_gap_security_initiate`) et `on_pairing_result` existe déjà côté
+  `GattClientListener`, mais rien ne les relie encore à une automation YAML.
+- **`ble_client.ble_write` déclaratif** : pas repris. Équivalent disponible via lambda :
+  `id(mon_client).engine().write_characteristic(handle, data, len, response)`, le handle
+  se résolvant via `id(mon_client).get_characteristic(service_uuid, char_uuid)`.
+- **Type d'adresse appris par scan** : le core Bluedroid enregistre le client comme
+  `ESPBTClient` auprès du tracker pour observer l'advertisement du pair avant de se
+  connecter (et en déduire PUBLIC vs RANDOM). Notre port NimBLE compose directement
+  `ble_gap_connect()` par adresse sans scan préalable (écart architectural déjà assumé --
+  voir ARCHITECTURE.md M2/M3), et suppose donc **toujours BLE_ADDR_TYPE_PUBLIC**. Un pair
+  utilisant une adresse RANDOM/RPA ne sera jamais joignable en l'état.
+- **Aucune plateforme sensor/switch/text_sensor consommant `BLEClientNode`** n'est portée
+  (ex. `ble_sensor`, `ble_binary_sensor`, `ble_client.switch`, etc. du core) -- hors
+  périmètre décidé pour ce projet (voir ARCHITECTURE.md, l'objectif est le correctif du
+  hang Bluedroid, pas l'écosystème de capteurs BLE complet). `register_ble_node()` existe
+  et suit l'interface neutre `BLEClientNode` (`on_ble_client_connected`/
+  `on_ble_client_disconnected`/`loop()`) pour qu'une future plateforme puisse s'y attacher,
+  mais celle-ci diffère du `gattc_event_handler` Bluedroid du core -- un futur portage d'une
+  plateforme core devra être réécrit contre cette interface, pas simplement recompilé.
+- **`ble_client.connect`/`ble_client.disconnect` ne sont pas "complex" actions** : contrairement
+  au core (`play_complex_`/`num_running_`, qui suspend la chaîne d'automation jusqu'à la fin
+  réelle de la connexion/déconnexion), nos actions sont fire-and-forget -- `play()` lance
+  l'opération et la chaîne continue immédiatement. `on_connect`/`on_disconnect` restent le
+  moyen de réagir au résultat réel.
+- **Backoff de reconnexion fixe (5000ms), pas exponentiel** : `esp32_ble_client::BLEClientBase`
+  retente après un délai fixe une fois en état `Backoff` (voir `BACKOFF_RETRY_DELAY_MS`).
+  Le hardening backoff exponentiel + jitter + plafond est prévu M7 (voir ARCHITECTURE.md),
+  volontairement pas anticipé ici.
 
 
 ## Piège vérifié en pratique (M1, 2026-08-31)
