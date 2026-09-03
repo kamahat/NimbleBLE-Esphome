@@ -177,6 +177,16 @@ def request_gatt_client() -> None:
 _request_listener_slot = cg.slot_counter(LISTENER_COUNT_DEFINE)
 
 
+def request_listener_slot() -> None:
+    """Claim one ble_device_base listener slot (sizes
+    ESPHOME_BLE_DEVICE_BASE_LISTENER_COUNT). register_ble_device() calls this for
+    sensors; a tracker's own automation triggers register themselves on the hub
+    from their C++ constructors, so the tracker's to_code() must call this once per
+    trigger instance it builds, or the listener falls into an undefined-macro no-op.
+    """
+    _request_listener_slot()
+
+
 async def register_ble_device(var: cg.MockObj, config: ConfigType) -> cg.MockObj:
     """Register `var` as a parsed-advertisement listener on the configured hub."""
     hub = await cg.get_variable(config[CONF_BLE_HUB_ID])

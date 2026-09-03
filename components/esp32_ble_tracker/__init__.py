@@ -142,6 +142,7 @@ async def to_code(config):
             addr_list = [it.as_hex for it in conf[CONF_MAC_ADDRESS]]
             cg.add(trigger.set_addresses(addr_list))
         await automation.build_automation(trigger, [(ESPBTDeviceConstRef, "x")], conf)
+        ble_device_base.request_listener_slot()
     for conf in config.get(CONF_ON_BLE_SERVICE_DATA_ADVERTISE, []):
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
         if len(conf[CONF_SERVICE_UUID]) == len(bt_uuid16_format):
@@ -157,6 +158,7 @@ async def to_code(config):
         if CONF_MAC_ADDRESS in conf:
             cg.add(trigger.set_address(conf[CONF_MAC_ADDRESS].as_hex))
         await automation.build_automation(trigger, [(adv_data_t_const_ref, "x")], conf)
+        ble_device_base.request_listener_slot()
     for conf in config.get(CONF_ON_BLE_MANUFACTURER_DATA_ADVERTISE, []):
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
         if len(conf[CONF_MANUFACTURER_ID]) == len(bt_uuid16_format):
@@ -172,6 +174,8 @@ async def to_code(config):
         if CONF_MAC_ADDRESS in conf:
             cg.add(trigger.set_address(conf[CONF_MAC_ADDRESS].as_hex))
         await automation.build_automation(trigger, [(adv_data_t_const_ref, "x")], conf)
+        ble_device_base.request_listener_slot()
     for conf in config.get(CONF_ON_SCAN_END, []):
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
         await automation.build_automation(trigger, [], conf)
+        ble_device_base.request_listener_slot()
