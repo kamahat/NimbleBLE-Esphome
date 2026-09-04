@@ -193,3 +193,55 @@ dans cette session ; à défaut, réessayer une seconde fois suffit généraleme
 Ne pas confondre ce symptôme avec un vrai crash/watchdog (aucun indicateur de
 reset trouvé dans les captures concernées : pas de bannière de boot répétée,
 pas de "Guru Meditation Error").
+
+
+## M4 — acceptance test réel contre la Boks (2026-09-04)
+
+Test dédié (`tmp/m4_boks_test/`, non commité, gitignoré) sur l'ESP32-S3 précédemment
+utilisé pour `project-boks-nimble-bridge` (MAC `AC:27:6E:A4:EA:38`), rebranché en USB
+localement le temps du test (la carte tournait auparavant le pont fl4p, remplacé pour ce
+test avec confirmation explicite de l'utilisateur -- ce pont proxifiait réellement la Boks
+dans Home Assistant). Cible : adresse réelle de la Boks (`CD:05:E3:65:D6:7F`, adresse
+statique random -- bits de poids fort `11`), connexion directe par adresse (pas de scan
+préalable), 10 tentatives connect()+discover_services() consécutives via
+`bluetooth_connection::NimbleGattClient`, chronométrées.
+
+**Gotcha rencontré** : aucune sortie série sur le port CH343 (COM12) avec la config
+logger par défaut -- contrairement à l'ESP32-C5 (qui a besoin de
+`hardware_uart: USB_SERIAL_JTAG`), cette carte S3 a besoin de l'inverse,
+**`hardware_uart: UART0` explicite**, sinon la console part ailleurs (JTAG natif de la
+puce) et le pont CH343 ne voit rigoureusement rien (0 octet reçu, vérifié en lecture
+brute avant de comprendre la cause). Gotcha symétrique à celui du C5, à retenir pour
+toute carte S3/C3/C6 avec pont UART physique séparé du contrôleur natif.
+
+**Résultat** : 10/10 tentatives bornées, aucune n'a hang, timing quasi identique à
+chaque fois --
+
+| Tentative | Résultat | error | Durée |
+|---|---|---|---|
+| 1 | timeout | 13 (`BLE_HS_ETIMEOUT`) | 5008ms |
+| 2 | timeout | 13 | 5014ms |
+| 3 | timeout | 13 | 5017ms |
+| 4 | timeout | 13 | 5004ms |
+| 5 | timeout | 13 | 5006ms |
+| 6 | timeout | 13 | 5008ms |
+| 7 | timeout | 13 | 5011ms |
+| 8 | timeout | 13 | 5013ms |
+| 9 | timeout | 13 | 5015ms |
+| 10 | timeout | 13 | 5017ms |
+
+Chaque tentative respecte la deadline `Connecting` de 5000ms à ±17ms près (jitter de
+planification/logging) -- **aucune dérive sur 10 essais consécutifs**. C'est la comparaison
+directe recherchée face au Bluedroid stock : là où `esp_ble_gattc_search_service()` n'a
+aucune deadline côté device (le ~30s documenté dans `project-boks-esp32-spike` est le
+timeout du CLIENT HA, pas une protection du firmware), notre FSM borne côté device, de
+façon déterministe, à chaque tentative -- un gain qualitatif (borné vs pas borné du tout),
+pas seulement quantitatif (5s vs 30s).
+
+**Non prouvé dans ce test** : aucune des 10 tentatives n'a atteint `connected=1` -- la
+Boks n'a pas répondu une seule fois. Cause la plus probable : la carte a été rebranchée en
+USB au poste de travail pour ce test, donc plus à portée BLE réelle de la Boks (zone
+`exterieur_sud` dans HA, donc à l'extérieur -- la carte est maintenant à l'intérieur, sur
+le bureau). Le chemin d'échec borné est donc prouvé de bout en bout contre la cible réelle
+(pas un stand-in) ; le chemin de succès (connect+discover réel contre la Boks) nécessite de
+rapprocher physiquement la carte de la boîte aux lettres, pas encore fait.
