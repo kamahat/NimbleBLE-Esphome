@@ -14,6 +14,8 @@
 #include "host/util/util.h"
 #include "services/gap/ble_svc_gap.h"
 
+#include <algorithm>
+
 namespace esphome::nimble_ble {
 
 static const char *const TAG = "nimble_ble";
@@ -96,6 +98,27 @@ bool NimbleController::start_advertising(ble_gap_event_fn *cb, void *cb_arg) {
   fields.name_is_complete = 1;
 
   int rc = ble_gap_adv_set_fields(&fields);
+  if (rc == BLE_HS_EMSGSIZE) {
+    // Legacy advertising payload is capped at BLE_HS_ADV_MAX_SZ (31) bytes
+    // total; flags (3B) + tx power (3B) + name AD header (2B) leaves only
+    // ~23 bytes for the device name itself -- a descriptive `esphome:
+    // name:` easily exceeds that. Found via real hardware testing in M5
+    // (the first role in this project that actually advertises -- the
+    // client/scanner roles never hit this path). Degrade gracefully
+    // instead of never advertising at all: drop tx power first, then
+    // truncate the name.
+    ESP_LOGW(TAG, "Advertising fields too large for name '%s'; dropping tx power level",
+             this->device_name_ != nullptr ? this->device_name_ : "");
+    fields.tx_pwr_lvl_is_present = 0;
+    rc = ble_gap_adv_set_fields(&fields);
+  }
+  if (rc == BLE_HS_EMSGSIZE) {
+    constexpr size_t kMaxNameLen = BLE_HS_ADV_MAX_SZ - 3 /* flags AD */ - 2 /* name AD header */;
+    ESP_LOGW(TAG, "Still too large; truncating advertised name to %u bytes", (unsigned) kMaxNameLen);
+    fields.name_len = static_cast<uint8_t>(std::min<size_t>(fields.name_len, kMaxNameLen));
+    fields.name_is_complete = 0;
+    rc = ble_gap_adv_set_fields(&fields);
+  }
   if (rc != 0) {
     ESP_LOGE(TAG, "ble_gap_adv_set_fields failed: %d", rc);
     return false;

@@ -305,3 +305,53 @@ ESPHome/Home Assistant) n'a pas encore été revalidé sur cette carte depuis le
 du firmware fl4p -- ce test-ci vérifie directement `bluetooth_connection` (le moteur GATT),
 pas encore le chemin complet `bluetooth_proxy` + HA. La carte tourne actuellement le
 firmware de test (`tmp/m4_boks_test/`), pas un déploiement `bluetooth_proxy:` réel.
+
+## M5 -- esp32_ble_server (rôle GATT serveur), vérification matérielle
+
+Test config : `tests/components/esp32_ble_server/test.esp32c5-idf.yaml` (ESP32-C5) et
+`test.esp32-idf.yaml` (ESP32 classique, ESP32-D0WD) -- 1 service custom, 1 caractéristique
+`Read/Write/Notify`, 1 descripteur `Characteristic User Description` (0x2901) déclaré
+explicitement, `on_connect`/`on_disconnect`/`on_write` loggant, `manufacturer_data` défini.
+
+**Bug réel trouvé et corrigé (payload d'advertising)** : la première tentative de flash
+échouait à advertiser (`ble_gap_adv_set_fields failed: 4` = `BLE_HS_EMSGSIZE`). Cause :
+le payload d'advertising legacy est plafonné à 31 octets (`BLE_HS_ADV_MAX_SZ`) ; flags (3o)
++ tx power level (3o) + en-tête AD du nom (2o) ne laissent qu'environ 23 octets pour le nom
+lui-même -- un `esphome: name:` descriptif (`nimble-m5-server-test-c5`, 24 caractères) dépasse
+ce budget. Jamais rencontré avant M5 car les rôles client/scanner (M1-M4) n'advertisent
+jamais -- c'est le premier rôle du projet à réellement emprunter ce chemin de code sur du
+matériel réel. Corrigé dans `components/nimble_ble/nimble_controller.cpp::start_advertising()` :
+dégradation progressive au lieu d'un échec silencieux -- retire d'abord le tx power level,
+puis tronque le nom si nécessaire, avant d'abandonner. Confirmé par log série :
+`Advertising: NO` → (après correctif) `Advertising: YES` avec le même nom de test inchangé.
+
+**Fausse piste investiguée et écartée (contrôleur Bluetooth du Pi4 arbiter)** : la première
+tentative de connexion réelle échouait systématiquement (`org.bluez.Error.Failed
+le-connection-abort-by-local`, capture `btmon` montrant un échec HCI `Connection Failed to
+be Established (0x3E)` ~330ms après le tout premier échange post-connexion, `LE Read Remote
+Used Features`) -- reproduit à l'identique sur **deux familles de puces différentes**
+(ESP32-C5 *et* ESP32 classique ESP32-D0WD), ce qui écarte un défaut matériel propre à une
+carte. `dmesg` confirme que le firmware du contrôleur Bluetooth intégré du Pi4 (Broadcom
+BCM4345C0) se charge sans erreur, mais ce chip a des limitations BLE documentées dans la
+communauté RPi/BlueZ correspondant exactement à ce symptôme. Conclusion : le problème vient
+du central de test (le Pi4), pas du code du projet -- confirmé en connectant un central
+totalement différent (téléphone Android, app BLE Scanner).
+
+**Vérification réussie (téléphone Android, app BLE Scanner, deux cartes testées)** :
+
+| Étape | ESP32-C5 (`nimble-m5-server-test-c5`) | ESP32 classique (`nimble-m5-esp32`) |
+|---|---|---|
+| Connexion | GATT_SUCCESS, CONNECTED | GATT_SUCCESS, CONNECTED |
+| Découverte services | 1 service custom trouvé, UUID exact | 1 service custom trouvé, UUID exact |
+| Caractéristique | `...abcdef1`, props `[Read,Write,Notify]` exacts | idem |
+| Descripteurs | CCCD `0x2902` (auto-ajoutée par NimBLE) + CUD `0x2901` (déclarée) | idem |
+| Read | valeur lue avec succès | valeur lue avec succès |
+| Write | écriture confirmée ; `on_write` ESP32 loggue `len=4` puis `len=5` (`len=5` = "test3") | -- |
+| Notify | abonnement OK ; write "test4" → notification reçue avec la même valeur (0x74-65-73-74-34) | -- |
+
+Confirme : la table de services/caractéristiques/descripteurs statique NimBLE correspond
+exactement à la config déclarative, la CCCD est bien auto-gérée (pas de doublon avec le
+0x2902 utilisateur), le round-trip write→on_write→notify fonctionne de bout en bout, et le
+re-armement de l'advertising après déconnexion (déjà observé en log série lors des tests
+précédents : `client disconnected` suivi immédiatement d'un nouveau `Advertising fields...`)
+fonctionne comme prévu.

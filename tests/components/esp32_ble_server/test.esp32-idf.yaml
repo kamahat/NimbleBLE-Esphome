@@ -1,12 +1,10 @@
 esphome:
-  name: nimble-m5-server-test-c5
+  name: nimble-m5-esp32
 
 esp32:
-  board: esp32-c5-devkitc-1
+  board: esp32dev
   framework:
     type: esp-idf
-    sdkconfig_options:
-      CONFIG_XTAL_FREQ_48: 'y'
 
 external_components:
   - source:
@@ -33,8 +31,6 @@ esp32_ble_server:
               - logger.log:
                   format: "characteristic written, conn=%u len=%u"
                   args: ['id', 'x.size()']
-              - ble_server.characteristic.notify:
-                  id: test_char
           descriptors:
             - uuid: '2901'
               read: true
@@ -53,4 +49,3 @@ esp32_ble_server:
 
 logger:
   level: DEBUG
-  hardware_uart: USB_SERIAL_JTAG

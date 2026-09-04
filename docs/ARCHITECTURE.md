@@ -266,7 +266,24 @@ ESPHome core, pas une invention de ce projet.
   chemin legacy compris.
 - **M4** — `bluetooth_proxy` bout-en-bout + validation matérielle réelle (voir
   HARDWARE_VALIDATION.md).
-- **M5** — Rôle serveur GATT (`esp32_ble_server`).
+- **M5** — TERMINÉ. Rôle serveur GATT (`esp32_ble_server`) sur table statique NimBLE
+  (`ble_gatts_count_cfg` + `ble_gatts_add_svcs` + `ble_gatts_start`, un seul enregistrement
+  au lieu de la création asynchrone service-par-service de Bluedroid) : `BLEServer`/
+  `BLEService`/`BLECharacteristic`/`BLEDescriptor`/`BLE2902`, file d'événements
+  `ServerEventQueue` (même patron thread-marshaling que le client M3), `ble_server_automations`
+  repris tel quel du core (confirmé neutre vis-à-vis de Bluedroid). CCCD (0x2902) auto-gérée
+  par NimBLE pour toute caractéristique notify/indicate ; un 0x2902 déclaré par l'utilisateur
+  est accepté mais exclu de la table réellement enregistrée (parité API, pas de doublon).
+  Portée v1 volontairement réduite face au core -- voir OVERRIDE_CAVEATS.md.
+
+  **Validation matérielle (téléphone Android, deux familles de puces -- ESP32-C5 et ESP32
+  classique ESP32-D0WD, voir HARDWARE_VALIDATION.md)** : connexion, découverte du service/
+  caractéristique/descripteurs exactement conforme à la config, read, write (`on_write`
+  confirmé côté ESP32), notify (valeur poussée après écriture, reçue par le central) --
+  tous validés de bout en bout sur les deux cartes. Un vrai bug trouvé via matériel réel
+  (payload d'advertising legacy plafonné à 31 octets, jamais rencontré avant M5 car aucun
+  rôle précédent n'advertit) corrigé par dégradation progressive dans
+  `nimble_controller.cpp::start_advertising()`.
 - **M6** — Spec formelle + propriétés TLC vertes en CI.
 - **M7** — Hardening (backoff, pairing policy, adv queue — voir SECURITY.md).
 - **M8** — CI, docs, première release taguée.
