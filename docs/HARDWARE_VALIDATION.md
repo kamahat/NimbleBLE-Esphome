@@ -245,3 +245,63 @@ USB au poste de travail pour ce test, donc plus à portée BLE réelle de la Bok
 le bureau). Le chemin d'échec borné est donc prouvé de bout en bout contre la cible réelle
 (pas un stand-in) ; le chemin de succès (connect+discover réel contre la Boks) nécessite de
 rapprocher physiquement la carte de la boîte aux lettres, pas encore fait.
+
+
+## M4 — succès réel confirmé : connect + discover_services contre la vraie Boks (2026-09-04)
+
+Suite du test précédent (carte S3 rapprochée physiquement de la Boks, branchée en USB sur
+l'arbiter Pi4 192.168.80.238, `/dev/ttyACM0`). Deux bugs réels trouvés et corrigés en cours
+de route, tous deux jamais atteignables par les tests précédents faute de pair réel :
+
+1. **Fuite de connexion sur échec de découverte** (`finish_discovery_()`) : un échec
+   *synchrone* d'une étape de découverte (par opposition au timeout borné piloté par
+   `loop()`, qui lui ferme déjà le lien) ne fermait jamais la connexion NimBLE -- le
+   `conn_handle_` restait valide indéfiniment, bloquant toute tentative suivante avec
+   `BLE_HS_EALREADY` (rc=2) dès le premier `connect()`. Corrigé : `finish_discovery_()`
+   appelle désormais `ble_gap_terminate()` sur toute erreur non nulle si une connexion
+   est encore ouverte.
+
+2. **Off-by-one réel dans `start_next_chr_dsc_discovery_()`** : le paramètre
+   `start_handle` de `ble_gattc_disc_all_dscs()` attend le **handle de valeur de la
+   caractéristique lui-même** (NimBLE ajoute déjà +1 en interne --
+   `ble_gattc_disc_all_dscs_tx()` calcule `prev_handle + 1` où `prev_handle` est
+   initialisé à `start_handle`) ; le code passait `chr.value_handle + 1`, un double
+   incrément. Pour une caractéristique avec exactement un descripteur adjacent
+   (`value_handle + 1 == end_handle`, cas fréquent -- ici `value_handle=12 end_handle=13`,
+   la caractéristique Service Changed 0x2A05 avec sa CCCD), la requête ATT interne
+   devenait `[end_handle+1, end_handle]` = `[14,13]`, un intervalle inversé rejeté par
+   NimBLE avec `BLE_HS_EINVAL` (3) -- confirmé en lisant directement le source NimBLE
+   (`ble_gattc.c`) après un diagnostic ciblé sur les valeurs réelles de handles. Corrigé :
+   passer `chr.value_handle` directement (pas `+ 1`).
+
+**Résultat après les deux correctifs** : 5 tentatives consécutives observées (2 à 6, la
+capture ayant démarré après la 1ʳᵉ) toutes réussies de bout en bout --
+
+| Tentative | connect() | discover_services() | Services / Chars / Descripteurs | Durée totale |
+|---|---|---|---|---|
+| 2 | connecté, MTU 23 | error=0 | 6 / 15 / 5 | 1772ms |
+| 3 | connecté, MTU 23 | error=0 | 6 / 15 / 5 | 1597ms |
+| 4 | connecté, MTU 23 | error=0 | 6 / 15 / 5 | 1626ms |
+| 5 | connecté, MTU 23 | error=0 | 6 / 15 / 5 | 1413ms |
+| 6 | connecté, MTU 23 | error=0 | 6 / 15 / 5 | 674ms |
+
+Services découverts, cohérents avec le profil BLE standard d'un verrou connecté :
+`0x1800` (Generic Access), `0x1801` (Generic Attribute), un service vendeur custom
+(`A7630001-F491-4F21-95EA-846BA586E361`), `0xFE59` (service DFU Nordic -- mise à jour
+firmware), `0x180F` (Battery Service), `0x180A` (Device Information Service :
+`0x2A29` fabricant, `0x2A24` modèle, `0x2A25` numéro de série, `0x2A26` révision firmware,
+`0x2A28` révision logicielle, `0x2A19` batterie) -- cohérent avec les valeurs déjà
+observées en lecture seule dans `project-boks-ble-testing` (FW 10/125, SW 4.6.0).
+
+**C'est la preuve directe qui motivait ce projet depuis le départ** : découverte GATT
+complète et fiable contre la Boks réelle en moins de 2 secondes, à répétition, là où
+Bluedroid ne terminait jamais côté device (le ~30s documenté était le timeout du CLIENT,
+pas une deadline du firmware). Chaque tentative se termine ensuite par un disconnect
+(`error=534`, déconnexion propre côté device après la découverte -- comportement normal,
+rien à corriger) plutôt qu'un hang.
+
+**Reste ouvert** : le pont Boks↔HA (`bluetooth_proxy` en conditions réelles, avec l'API
+ESPHome/Home Assistant) n'a pas encore été revalidé sur cette carte depuis le remplacement
+du firmware fl4p -- ce test-ci vérifie directement `bluetooth_connection` (le moteur GATT),
+pas encore le chemin complet `bluetooth_proxy` + HA. La carte tourne actuellement le
+firmware de test (`tmp/m4_boks_test/`), pas un déploiement `bluetooth_proxy:` réel.

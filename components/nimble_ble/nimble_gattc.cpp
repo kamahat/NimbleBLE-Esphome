@@ -491,7 +491,16 @@ void NimbleGattEngine::start_next_chr_dsc_discovery_() {
     auto &chr = this->characteristics_[this->discover_chr_index_];
     if (chr.end_handle > chr.value_handle) {
       chr.first_descriptor = static_cast<uint16_t>(this->descriptors_.size());
-      int rc = ble_gattc_disc_all_dscs(this->conn_handle_, chr.value_handle + 1, chr.end_handle,
+      // start_handle is the characteristic's VALUE handle itself, not
+      // value_handle + 1 -- NimBLE's own ble_gattc_disc_all_dscs_tx() adds
+      // that +1 internally (proc->disc_all_dscs.prev_handle initialized to
+      // start_handle, then queried as prev_handle + 1). Passing
+      // value_handle + 1 here double-incremented it, so a characteristic
+      // with exactly one descriptor (value_handle+1 == end_handle) produced
+      // an inverted [end_handle+1, end_handle] range -- confirmed via
+      // BLE_HS_EINVAL against the real Boks (chr_idx=4, value_handle=12,
+      // end_handle=13): 12+1+1=14 > 13.
+      int rc = ble_gattc_disc_all_dscs(this->conn_handle_, chr.value_handle, chr.end_handle,
                                        &NimbleGattEngine::disc_dsc_cb_, this->event_owner());
       if (rc != 0) {
         ESP_LOGW(TAG, "ble_gattc_disc_all_dscs failed: %d", rc);
@@ -513,6 +522,17 @@ void NimbleGattEngine::finish_discovery_(int error) {
   // outcome even though the trigger was not actually a clock. Documented
   // simplification for v1 (docs/ARCHITECTURE.md).
   this->fsm_.handle_event(error == 0 ? BleConnEvent::DISCOVER_DONE : BleConnEvent::DISCOVER_TIMEOUT, millis());
+  if (error != 0 && this->conn_handle_ != BLE_HS_CONN_HANDLE_NONE) {
+    // A synchronous discovery-step failure (unlike the loop()-driven deadline
+    // timeout, which already tears the link down itself) left the connection
+    // fully open with nothing left to ever close it -- confirmed on real
+    // hardware against the Boks: ble_gattc_disc_all_dscs returned EINVAL
+    // synchronously, and every later connect() attempt then refused with
+    // EALREADY because conn_handle_ was still valid. Terminate here so the
+    // normal DISCONNECT event path (finish_disconnect_) clears it the same
+    // way any other teardown does.
+    ble_gap_terminate(this->conn_handle_, HCI_ERR_REM_USER_CONN_TERM);
+  }
   if (this->listener_ != nullptr)
     this->listener_->on_service_discovery_done(error);
 }
