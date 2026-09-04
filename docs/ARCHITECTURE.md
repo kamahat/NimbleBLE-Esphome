@@ -255,7 +255,7 @@ ESPHome core, pas une invention de ce projet.
   `retry_connect()` (fait passer Backoff -> Idle via l'événement `BACKOFF_ELAPSED` avant de
   relancer `connect()` -- Backoff n'accepte que cet événement, `connect()` seul y serait un
   no-op silencieux) et `state()`. Boucle de reconnexion à délai fixe (5000ms) dans
-  `BLEClientBase::loop()` -- backoff exponentiel prévu M7, volontairement pas anticipé ici
+  `BLEClientBase::loop()` -- backoff exponentiel FAIT en M7 (`connect_backoff.h`)
   (voir OVERRIDE_CAVEATS.md pour le reste du périmètre sciemment non repris : pairing/passkey,
   `ble_client.ble_write`, plateformes sensor/switch/text_sensor).
 
@@ -312,5 +312,31 @@ ESPHome core, pas une invention de ce projet.
   CI : `.github/workflows/state-machine-check.yml` -- régénère TLA+/C++ depuis le spec et
   échoue si le résultat commité a divergé, lance TLC, lance le check de reachability, compile
   et exécute le test unitaire host-buildable.
-- **M7** — Hardening (backoff, pairing policy, adv queue — voir SECURITY.md).
+- **M7** — Hardening, voir SECURITY.md pour le détail complet.
+  - **connect_backoff** (fait) : backoff exponentiel + jitter (`components/nimble_ble/
+    connect_backoff.h`), keyed off `BleConnectionFsm::backoff_count()` directement --
+    remplace le délai fixe 5000ms de `BLEClientBase::loop()` (seule boucle de reconnexion
+    autonome de ce dépôt ; `bluetooth_proxy` ne retente jamais de lui-même, chaque connexion
+    vient d'une requête HA explicite).
+  - **pairing policy** (partiel, assumé) : `ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT`
+    rend la classe de vulnérabilité fl4p (passkey codé en dur auto-accepté) structurellement
+    impossible. Une vraie allowlist par MAC/service avec accept/reject explicite reste NON
+    écrite -- documenté comme tel plutôt que livré non vérifié, faute d'un pair matériel qui
+    initie un pairing pour le tester cette session.
+  - **adv_queue** (fait) : vrai bug de thread-safety trouvé en cours de route --
+    `handle_gap_event_()` appelait `ScanResponseMerger`/`AdvDispatcher` (donc les
+    `ESPBTDeviceListener`, potentiellement l'API ESPHome via `bluetooth_proxy`) directement
+    depuis la tâche hôte NimBLE, pas depuis la boucle principale -- seul endroit du projet où
+    ce principe de marshaling déjà établi (M3/M5) n'était pas respecté.
+    `components/esp32_ble_tracker/adv_queue.h/.cpp` corrige ça avec le même patron de file
+    bornée, plus le compteur de drops exposé demandé par SECURITY.md.
+  - **gatt_response_chunking** (investigué, pas nécessaire) : `bluetooth_connection_hub.cpp`
+    utilise déjà `std::vector<uint8_t>`/longueur réelle partout, aucune troncature possible ;
+    la pagination de la liste de services existe déjà nativement (`bluetooth_gatt_send_services()`).
+    Rien à corriger dans cette réimplémentation clean-room -- pas de fichier dédié créé.
+
+  Vérifié par compilation sans régression sur les 5 cibles de test concernées (M2 tracker,
+  M3 client, M4 proxy, M5 server). Vérification matérielle du backoff exponentiel (observer
+  concrètement la croissance 5s/10s/20s des délais sur l'adresse injoignable du test M3)
+  bloquée par l'indisponibilité de l'arbiter au moment de ce jalon -- reste à faire.
 - **M8** — CI, docs, première release taguée.

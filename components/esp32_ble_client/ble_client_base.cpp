@@ -24,12 +24,19 @@ void BLEClientBase::loop() {
     this->backoff_started_at_ = 0;
     return;
   }
-  // Fixed retry delay (see BACKOFF_RETRY_DELAY_MS's doc comment): the engine
+  // M7: exponential backoff + jitter (see connect_backoff.h) -- the engine
   // itself has no timer for how long to sit in Backoff, by design -- only
-  // Connecting/Discovering carry a deadline (spec/transitions.json).
+  // Connecting/Discovering carry a deadline (spec/transitions.json). The
+  // delay is computed once per Backoff entry (backoff_started_at_ == 0),
+  // from backoff_count() at that exact moment, so it does not keep growing
+  // while merely waiting out a single already-latched delay.
   if (this->backoff_started_at_ == 0) {
     this->backoff_started_at_ = millis();
-  } else if (this->auto_connect_ && millis() - this->backoff_started_at_ >= BACKOFF_RETRY_DELAY_MS) {
+    this->current_backoff_delay_ms_ =
+        nimble_ble::compute_connect_backoff_delay_ms(this->engine_.backoff_count(), random_uint32() % 100);
+    ESP_LOGD(TAG, "[%s] backing off %ums (attempt %u)", this->address_str_,
+             static_cast<unsigned>(this->current_backoff_delay_ms_), static_cast<unsigned>(this->engine_.backoff_count()));
+  } else if (this->auto_connect_ && millis() - this->backoff_started_at_ >= this->current_backoff_delay_ms_) {
     this->backoff_started_at_ = 0;
     this->connect();
   }

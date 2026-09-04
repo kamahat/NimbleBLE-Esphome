@@ -1,6 +1,23 @@
 # components/esp32_ble_tracker — SURCHARGE de `esphome/components/esp32_ble_tracker`
 
-**Statut : squelette, M2.** Côté core sur le commit figé, ce composant est déjà réduit à un
-fin wrapper (`__init__.py`, `automation.h`, `esp32_ble_tracker.cpp/.h` — confirmé, voir
-`docs/ARCHITECTURE.md`) : démarrage/arrêt du scan et fan-out vers les `ESPBTDeviceListener`
-enregistrés. La logique lourde (GATT/scan partagé) vit désormais dans `ble_device_base`.
+**Statut : implémenté, M2 + durcissement M7.** Démarrage/arrêt du scan et fan-out vers les
+`ESPBTDeviceListener` enregistrés (logique lourde GATT/scan partagée vit dans
+`ble_device_base`).
+
+## M7 -- adv_queue (docs/SECURITY.md)
+
+`BLE_GAP_EVENT_DISC`/`BLE_GAP_EVENT_DISC_COMPLETE` arrivent sur la tâche hôte NimBLE ; ils
+ne touchent plus `ScanResponseMerger`/`AdvDispatcher` (donc les `ESPBTDeviceListener`
+enregistrés, potentiellement `bluetooth_proxy` -> API/socket ESPHome) directement depuis
+cette tâche -- `adv_queue.h/.cpp` marshalle vers la boucle principale, même patron que
+`nimble_event.h` (client)/`nimble_server_event.h` (serveur). File bornée (64), compteur de
+drops exposé :
+
+```yaml
+sensor:
+  - platform: template
+    name: BLE adv drops
+    entity_category: diagnostic
+    lambda: |-
+      return id(the_tracker).get_adv_queue_dropped_count();
+```

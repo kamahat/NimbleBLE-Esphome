@@ -27,6 +27,8 @@
 
 #ifdef USE_ESP32
 
+#include "adv_queue.h"
+
 #include "esphome/components/esp32_ble/ble.h"
 #include "esphome/components/ble_device_base/ble_device.h"
 #include "esphome/components/ble_device_base/ble_hub.h"
@@ -77,6 +79,10 @@ class ESP32BLETracker final : public Component, public Parented<ESP32BLE> {
   void start_scan();
   void stop_scan();
   ScannerState get_scanner_state() const { return this->scanner_state_; }
+  /// M7 diagnostic counter (docs/SECURITY.md) -- advertisement reports
+  /// dropped since boot because the queue draining loop() couldn't keep up.
+  /// Wire to a `sensor: platform: template` in YAML (see README.md).
+  uint32_t get_adv_queue_dropped_count() const { return this->adv_queue_.dropped_count(); }
 #ifdef USE_BLE_SCANNER_STATE_CALLBACK
   // Required by BLEHubContract exactly when this define is set (ble_hub.h) --
   // bluetooth_proxy sets it (M4) so it can push scanner-state transitions to
@@ -109,6 +115,7 @@ class ESP32BLETracker final : public Component, public Parented<ESP32BLE> {
 
   ble_device_base::AdvDispatcher dispatcher_;
   ble_device_base::ScanResponseMerger merger_;
+  AdvQueue adv_queue_;
 #ifdef USE_BLE_SCANNER_STATE_CALLBACK
   ble_device_base::ScannerStateCallback scanner_state_callback_{};
 #endif

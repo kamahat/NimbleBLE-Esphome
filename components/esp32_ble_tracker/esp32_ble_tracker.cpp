@@ -22,6 +22,10 @@ void ESP32BLETracker::setup() {
   global_esp32_ble_tracker = this;
 
   this->merger_.bind(&this->dispatcher_, &this->scan_continuous_, TAG);
+  // Sized for a burst of nearby advertisers between loop() iterations, not
+  // just a handful of low-rate user-triggered events (contrast
+  // esp32_ble_server's ServerEventQueue, capacity 16) -- see adv_queue.h.
+  this->adv_queue_.init(64);
 
   if (this->scan_continuous_) {
     this->start_scan_();
@@ -31,6 +35,31 @@ void ESP32BLETracker::setup() {
 void ESP32BLETracker::loop() {
   if (!this->parent_->is_active())
     return;
+
+  // M7: drains what handle_gap_event_() (NimBLE host task) only queued --
+  // see adv_queue.h for why this can no longer run directly from the GAP
+  // callback.
+  AdvQueueEvent event;
+  while (this->adv_queue_.pop(&event)) {
+    switch (event.type) {
+      case AdvQueueEventType::SCAN_RSP:
+        this->merger_.submit_scan_rsp(event.mac, event.rssi, event.addr_type, event.data, event.data_len);
+        break;
+      case AdvQueueEventType::STASH_ADV:
+        this->merger_.stash_adv(event.mac, event.rssi, event.addr_type, event.data, event.data_len, millis());
+        break;
+      case AdvQueueEventType::DIRECT:
+        this->dispatcher_.dispatch(event.mac, event.rssi, event.addr_type, event.data, event.data_len,
+                                   /*raw_only=*/false, this->scan_continuous_ ? nullptr : TAG);
+        break;
+      case AdvQueueEventType::SCAN_COMPLETE:
+        this->merger_.flush();
+        this->dispatcher_.on_scan_end();
+        this->set_scanner_state_(ScannerState::IDLE);
+        break;
+    }
+    delete[] event.data;
+  }
 
   if (!this->merger_.empty()) {
     this->merger_.sweep(millis());
@@ -102,25 +131,34 @@ int ESP32BLETracker::handle_gap_event_(struct ble_gap_event *event) {
       const auto &disc = event->disc;
       const uint8_t *mac = disc.addr.val;  // LSB-first (controller order) -- matches
                                            // ble_device_base's ingest convention directly.
+      AdvQueueEvent qevent;
+      memcpy(qevent.mac, mac, sizeof(qevent.mac));
+      qevent.rssi = disc.rssi;
+      qevent.addr_type = disc.addr.type;
+      qevent.data_len = disc.length_data;
+      if (disc.length_data > 0) {
+        qevent.data = new uint8_t[disc.length_data];
+        memcpy(qevent.data, disc.data, disc.length_data);
+      }
       // Legacy PDU report type (Bluetooth Core spec, HCI LE Advertising Report):
       // 0=ADV_IND 1=ADV_DIRECT_IND 2=ADV_SCAN_IND 3=ADV_NONCONN_IND 4=SCAN_RSP
       if (disc.event_type == 4) {
-        this->merger_.submit_scan_rsp(mac, disc.rssi, disc.addr.type, disc.data, disc.length_data);
+        qevent.type = AdvQueueEventType::SCAN_RSP;
       } else if (disc.event_type == 0 || disc.event_type == 2) {
         // Scannable (ADV_IND / ADV_SCAN_IND): a scan response may follow.
-        this->merger_.stash_adv(mac, disc.rssi, disc.addr.type, disc.data, disc.length_data, millis());
+        qevent.type = AdvQueueEventType::STASH_ADV;
       } else {
         // Not scannable (ADV_DIRECT_IND / ADV_NONCONN_IND): deliver directly, no response coming.
-        this->dispatcher_.dispatch(mac, disc.rssi, disc.addr.type, disc.data, disc.length_data,
-                                   /*raw_only=*/false, this->scan_continuous_ ? nullptr : TAG);
+        qevent.type = AdvQueueEventType::DIRECT;
       }
+      this->adv_queue_.push_from_host_task(qevent);
       return 0;
     }
     case BLE_GAP_EVENT_DISC_COMPLETE: {
       ESP_LOGV(TAG, "Scan complete (reason=%d)", event->disc_complete.reason);
-      this->merger_.flush();
-      this->dispatcher_.on_scan_end();
-      this->set_scanner_state_(ScannerState::IDLE);
+      AdvQueueEvent qevent;
+      qevent.type = AdvQueueEventType::SCAN_COMPLETE;
+      this->adv_queue_.push_from_host_task(qevent);
       return 0;
     }
     default:

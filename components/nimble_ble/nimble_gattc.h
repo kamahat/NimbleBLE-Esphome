@@ -112,6 +112,11 @@ class NimbleGattEngine {
   /// duplicating the FSM's own bookkeeping.
   BleConnState state() const { return this->fsm_.state(); }
 
+  /// The FSM's own per-slot failure counter (see BleConnectionFsm::backoff_count())
+  /// -- M7's connect_backoff.h keys its exponential-delay computation off this
+  /// directly instead of tracking a separate per-address counter.
+  uint16_t backoff_count() const { return this->fsm_.backoff_count(); }
+
  protected:
   friend void drain_gatt_events();
   void handle_gatt_event_(const GattEvent &event);

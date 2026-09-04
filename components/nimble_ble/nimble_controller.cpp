@@ -60,6 +60,21 @@ bool NimbleController::setup(const char *device_name) {
   ble_hs_cfg.sync_cb = &NimbleController::on_sync_;
   ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
+  // M7 hardening (docs/SECURITY.md): fl4p hardcoded a pairing passkey
+  // (123456) that got auto-accepted for any peer requesting KEYBOARD_ONLY
+  // pairing, with no allowlist or consent. This project has no legitimate
+  // use for passkey/OOB pairing at all (documented deferred scope, see
+  // docs/OVERRIDE_CAVEATS.md) -- declaring NO_INPUT_OUTPUT capability makes
+  // a passkey-based exchange structurally impossible (there is no code path
+  // where this device could generate, display, or accept one), rather than
+  // relying on a policy check to reject it after the fact. sm_bonding/
+  // sm_mitm stay off: nothing here should persist bond state for or demand
+  // authenticated pairing with a peer this project does not yet have a
+  // pairing UX for.
+  ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT;
+  ble_hs_cfg.sm_bonding = 0;
+  ble_hs_cfg.sm_mitm = 0;
+
   int rc = ble_svc_gap_device_name_set(device_name);
   if (rc != 0) {
     ESP_LOGE(TAG, "ble_svc_gap_device_name_set failed: %d", rc);

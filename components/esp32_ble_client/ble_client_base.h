@@ -23,6 +23,7 @@
 #include "esphome/core/helpers.h"
 #include "esphome/components/ble_device_base/ble_client_state.h"
 #include "esphome/components/ble_device_base/ble_device.h"
+#include "esphome/components/nimble_ble/connect_backoff.h"
 #include "esphome/components/nimble_ble/nimble_gattc.h"
 
 #include <functional>
@@ -86,10 +87,13 @@ class BLEClientBase : public Component, public ble_device_base::GattClientListen
   char address_str_[18]{};
   ClientState state_{ClientState::IDLE};
   bool auto_connect_{false};
-  // Fixed retry delay for v1 -- the exponential-backoff+jitter+cap hardening
-  // planned for M7 (docs/ARCHITECTURE.md) applies here too, not yet done.
+  // M7: exponential backoff + jitter (nimble_ble::compute_connect_backoff_delay_ms),
+  // keyed off the engine's own BleConnectionFsm::backoff_count() -- see
+  // connect_backoff.h. current_backoff_delay_ms_ is latched once per Backoff
+  // entry (computed lazily in loop(), the first time backoff_started_at_ is 0)
+  // so it does not get recomputed (and drift) every loop() tick while waiting.
   uint32_t backoff_started_at_{0};
-  static constexpr uint32_t BACKOFF_RETRY_DELAY_MS = 5000;
+  uint32_t current_backoff_delay_ms_{0};
 };
 
 }  // namespace esphome::esp32_ble_client
