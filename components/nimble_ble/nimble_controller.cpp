@@ -80,7 +80,7 @@ bool NimbleController::setup(const char *device_name) {
   return true;
 }
 
-bool NimbleController::start_advertising() {
+bool NimbleController::start_advertising(ble_gap_event_fn *cb, void *cb_arg) {
   if (!synced_) {
     ESP_LOGE(TAG, "Cannot advertise: host not synced");
     return false;
@@ -106,7 +106,7 @@ bool NimbleController::start_advertising() {
   adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
   adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
 
-  rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, nullptr, BLE_HS_FOREVER, &adv_params, nullptr, nullptr);
+  rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, nullptr, BLE_HS_FOREVER, &adv_params, cb, cb_arg);
   if (rc != 0) {
     ESP_LOGE(TAG, "ble_gap_adv_start failed: %d", rc);
     return false;

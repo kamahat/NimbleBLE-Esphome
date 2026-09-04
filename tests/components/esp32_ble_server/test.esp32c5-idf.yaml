@@ -1,0 +1,54 @@
+esphome:
+  name: nimble-m5-server-test-c5
+
+esp32:
+  board: esp32-c5-devkitc-1
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_XTAL_FREQ_48: 'y'
+
+external_components:
+  - source:
+      type: local
+      path: ../../../components
+    components: [esp32_ble, nimble_ble, ble_device_base, esp32_ble_server]
+
+esp32_ble:
+
+esp32_ble_server:
+  manufacturer_data: [0x01, 0x02]
+  services:
+    - uuid: '12345678-1234-5678-1234-56789abcdef0'
+      advertise: true
+      characteristics:
+        - id: test_char
+          uuid: '12345678-1234-5678-1234-56789abcdef1'
+          read: true
+          write: true
+          notify: true
+          value: [0x00]
+          on_write:
+            then:
+              - logger.log:
+                  format: "characteristic written, conn=%u len=%u"
+                  args: ['id', 'x.size()']
+          descriptors:
+            - uuid: '2901'
+              read: true
+              write: false
+              value: "test characteristic"
+  on_connect:
+    then:
+      - logger.log:
+          format: "client connected, conn=%u"
+          args: ['id']
+  on_disconnect:
+    then:
+      - logger.log:
+          format: "client disconnected, conn=%u"
+          args: ['id']
+
+logger:
+  level: VERY_VERBOSE
+  hardware_uart: USB_SERIAL_JTAG

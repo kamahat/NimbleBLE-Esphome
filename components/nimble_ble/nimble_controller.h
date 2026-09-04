@@ -9,6 +9,8 @@
 
 #include <cstdint>
 
+#include "host/ble_gap.h"
+
 namespace esphome::nimble_ble {
 
 class NimbleController {
@@ -19,7 +21,11 @@ class NimbleController {
   // applied via ble_svc_gap_device_name_set once synced.
   bool setup(const char *device_name);
 
-  bool start_advertising();
+  // cb/arg let a peripheral-role consumer (esp32_ble_server) observe
+  // CONNECT/DISCONNECT/SUBSCRIBE for incoming connections -- nullptr (the
+  // default) preserves M1's original advertise-only behavior, where nothing
+  // needs to know about connection lifecycle.
+  bool start_advertising(ble_gap_event_fn *cb = nullptr, void *cb_arg = nullptr);
   bool stop_advertising();
   bool is_advertising() const { return this->advertising_; }
 

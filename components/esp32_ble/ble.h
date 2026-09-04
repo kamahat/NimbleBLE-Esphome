@@ -34,6 +34,17 @@ class ESP32BLE final : public Component {
 
   void get_mac_msb_first(uint8_t out[6]) const { this->controller_.get_mac_msb_first(out); }
 
+  // Lets a peripheral-role consumer (esp32_ble_server) own advertising with
+  // its own GAP callback (CONNECT/DISCONNECT/SUBSCRIBE), instead of M1's
+  // plain advertise-only path. Documented scope limit
+  // (docs/OVERRIDE_CAVEATS.md): combining esp32_ble_server with esp32_ble's
+  // own advertising: true in the same build is not coordinated -- the GATT
+  // server's advertising call simply takes over the one NimBLE advertising
+  // set that exists.
+  bool start_advertising_with_callback(ble_gap_event_fn *cb, void *cb_arg) {
+    return this->controller_.start_advertising(cb, cb_arg);
+  }
+
  protected:
   nimble_ble::NimbleController controller_;
   const char *name_{nullptr};

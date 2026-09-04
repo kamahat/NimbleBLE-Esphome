@@ -18,7 +18,7 @@
 #include "esphome/core/defines.h"
 
 #ifdef USE_ESP32
-#ifdef USE_BLE_GATT_CLIENT
+#if defined(USE_BLE_GATT_CLIENT) || defined(USE_ESP32_BLE_SERVER)
 
 #include "esphome/components/ble_device_base/ble_device.h"
 
@@ -28,6 +28,7 @@
 
 namespace esphome::nimble_ble {
 
+#ifdef USE_BLE_GATT_CLIENT
 inline ble_device_base::ESPBTUUID nimble_raw_uuid_to_espbtuuid(uint8_t type, const uint8_t raw[16]) {
   switch (type) {
     case BLE_UUID_TYPE_16: {
@@ -45,8 +46,34 @@ inline ble_device_base::ESPBTUUID nimble_raw_uuid_to_espbtuuid(uint8_t type, con
       return ble_device_base::ESPBTUUID::from_raw(raw);
   }
 }
+#endif  // USE_BLE_GATT_CLIENT
+
+#ifdef USE_ESP32_BLE_SERVER
+/// Reverse direction, for the GATT server (esp32_ble_server): a user-
+/// configured ESPBTUUID becomes a NimBLE ble_uuid_any_t for
+/// ble_gatt_svc_def/ble_gatt_chr_def/ble_gatt_dsc_def. `out` must outlive
+/// the registered service table (NimBLE keeps a pointer, not a copy).
+inline void espbtuuid_to_nimble_uuid(const ble_device_base::ESPBTUUID &uuid, ble_uuid_any_t *out) {
+  using ble_device_base::ESPBTUUID;
+  switch (uuid.type()) {
+    case ESPBTUUID::Type::UUID16:
+      out->u16.u.type = BLE_UUID_TYPE_16;
+      out->u16.value = uuid.uuid16();
+      break;
+    case ESPBTUUID::Type::UUID32:
+      out->u32.u.type = BLE_UUID_TYPE_32;
+      out->u32.value = uuid.uuid32();
+      break;
+    case ESPBTUUID::Type::UUID128:
+    default:
+      out->u128.u.type = BLE_UUID_TYPE_128;
+      memcpy(out->u128.value, uuid.uuid128(), sizeof(out->u128.value));
+      break;
+  }
+}
+#endif  // USE_ESP32_BLE_SERVER
 
 }  // namespace esphome::nimble_ble
 
-#endif  // USE_BLE_GATT_CLIENT
+#endif  // USE_BLE_GATT_CLIENT || USE_ESP32_BLE_SERVER
 #endif  // USE_ESP32
