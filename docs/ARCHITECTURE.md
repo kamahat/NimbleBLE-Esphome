@@ -158,7 +158,7 @@ voir section M1 ci-dessus) -- pas une réécriture, un vendoring quasi à l'iden
 `components/nimble_ble/` — bring-up contrôleur/host NimBLE (API ESP-IDF NimBLE brutes :
 `nimble_port.h`, `host/ble_gap.h`, `host/ble_gattc.h`, `host/ble_gatts.h`), traduction des
 callbacks C NimBLE en événements C++ typés, adaptateur UUID (`ESPBTUUID` ↔ NimBLE),
-moteur de state machine généré (`nimble_fsm/`, voir plus bas). `NimbleGattClient`
+moteur de state machine généré (voir plus bas). `NimbleGattClient`
 (satisfaisant `BLEGattConnectionContract`) sera implémenté dans
 `components/bluetooth_connection/bluetooth_connection_nimble.cpp/.h` et s'appuiera sur
 cette couche partagée.
@@ -284,6 +284,33 @@ ESPHome core, pas une invention de ce projet.
   (payload d'advertising legacy plafonné à 31 octets, jamais rencontré avant M5 car aucun
   rôle précédent n'advertit) corrigé par dégradation progressive dans
   `nimble_controller.cpp::start_advertising()`.
-- **M6** — Spec formelle + propriétés TLC vertes en CI.
+- **M6** — TERMINÉ. Modèle formel `spec/ble_state_machine.tla` (TLA+ direct, généré par
+  `tools/gen_state_machine/gen_tla.py` depuis le même `spec/transitions.json` que le moteur
+  C++ -- pas de PlusCal intermédiaire, les deux générateurs partagent une seule source de
+  vérité). Deadlines représentées par des constantes symboliques (`Deadline_CONNECT_REQUEST`,
+  `Deadline_GAP_CONNECT_OK`) fixées à de petites valeurs abstraites (2/3 ticks) dans
+  `ble_state_machine.cfg` pour garder l'espace d'états tractable -- la forme de la garantie
+  est invariante d'échelle ; les vraies valeurs (5000ms/8000ms) ne vivent que dans le moteur
+  C++ livré, désormais confirmées par les mesures matérielles réelles de M3/M4 (voir
+  HARDWARE_VALIDATION.md).
+
+  **TLC vert** : `TypeOK`, `BoundedWait`, `NoUnauthorizedPairing` (invariants) et
+  `EventuallyExits` (propriété temporelle sous fairness faible) tous vérifiés sans erreur
+  (587 états distincts après avoir borné `backoff_count` -- sans cette borne, l'espace
+  d'états explose : un cycle Idle→Connecting→Backoff sans jamais appeler Tick peut faire
+  croître `backoff_count` indéfiniment, observé concrètement à 900k+ états toujours en
+  croissance avant correctif). `tools/gen_state_machine/check_reachability.py` fait une
+  seconde vérification indépendante (recherche de cycle sur le graphe d'états exporté par
+  TLC) redondante avec `EventuallyExits`, dans l'esprit prouver, pas croire du projet.
+
+  `tests/unit/test_ble_connection_fsm.cpp` rejoue deux traces réelles extraites de TLC
+  (idiome standard : assertion d'un invariant volontairement faux pour obtenir un
+  contre-exemple concret) contre le moteur C++ compilé, avec les vraies deadlines en ms --
+  confirmant que le modèle vérifié et le code livré produisent bien les mêmes transitions
+  sur les mêmes séquences d'événements.
+
+  CI : `.github/workflows/state-machine-check.yml` -- régénère TLA+/C++ depuis le spec et
+  échoue si le résultat commité a divergé, lance TLC, lance le check de reachability, compile
+  et exécute le test unitaire host-buildable.
 - **M7** — Hardening (backoff, pairing policy, adv queue — voir SECURITY.md).
 - **M8** — CI, docs, première release taguée.

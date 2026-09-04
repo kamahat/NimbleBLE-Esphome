@@ -1,0 +1,75 @@
+name: State machine check
+
+# M6: keeps spec/transitions.json, the generated TLA+ model, and the generated
+# C++ engine from silently diverging, then actually runs TLC against the
+# model. See docs/ARCHITECTURE.md (state machine section) and
+# tools/gen_state_machine/{gen_tla.py,gen_cpp.py,check_reachability.py}.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  regen-diff-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regenerate spec/ble_state_machine.tla/.cfg from spec/transitions.json
+        run: python3 tools/gen_state_machine/gen_tla.py
+      - name: Regenerate components/nimble_ble/ble_connection_fsm.h/.cpp from the same spec
+        run: python3 tools/gen_state_machine/gen_cpp.py
+      - name: Fail if the committed generated files have drifted from the spec
+        run: |
+          if ! git diff --exit-code -- spec/ble_state_machine.tla spec/ble_state_machine.cfg \
+              components/nimble_ble/ble_connection_fsm.h components/nimble_ble/ble_connection_fsm.cpp; then
+            echo ""
+            echo "ERREUR : spec/transitions.json a changé sans que les générateurs n'aient été"
+            echo "re-exécutés et le résultat commité -- le modèle vérifié et le moteur C++ livré"
+            echo "divergent silencieusement. Lancer gen_tla.py et gen_cpp.py, puis commit."
+            exit 1
+          fi
+
+  tlc-check:
+    runs-on: ubuntu-latest
+    needs: regen-diff-check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Cache tla2tools.jar
+        uses: actions/cache@v4
+        with:
+          path: tools/tla/tla2tools.jar
+          key: tla2tools-jar-v1
+      - name: Download tla2tools.jar if not cached
+        run: |
+          mkdir -p tools/tla
+          [ -f tools/tla/tla2tools.jar ] || \
+            curl -sL -o tools/tla/tla2tools.jar \
+              https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar
+      - name: Run TLC (TypeOK, BoundedWait, NoUnauthorizedPairing, EventuallyExits)
+        run: |
+          cd spec
+          java -XX:+UseParallelGC -jar ../tools/tla/tla2tools.jar \
+            -config ble_state_machine.cfg ble_state_machine.tla
+      - name: Dump the explored state graph for the independent reachability check
+        run: |
+          cd spec
+          java -XX:+UseParallelGC -jar ../tools/tla/tla2tools.jar \
+            -config ble_state_machine.cfg -dump dot,actionlabels states.dot \
+            ble_state_machine.tla
+      - name: Independent reachability check (no cycle confined to Connecting/Discovering)
+        run: python3 tools/gen_state_machine/check_reachability.py spec/states.dot
+
+  host-unit-test:
+    runs-on: ubuntu-latest
+    needs: regen-diff-check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the host-buildable FSM unit test (no ESP-IDF)
+        run: |
+          g++ -std=c++20 -I components/nimble_ble -o /tmp/test_fsm \
+            tests/unit/test_ble_connection_fsm.cpp components/nimble_ble/ble_connection_fsm.cpp
+          /tmp/test_fsm

@@ -1,4 +1,4 @@
-"""Generates components/nimble_ble/nimble_fsm/ble_connection_fsm.h/.cpp from
+"""Generates components/nimble_ble/ble_connection_fsm.h/.cpp from
 spec/transitions.json. Do not hand-edit the generated files -- re-run this
 script after editing the spec.
 """

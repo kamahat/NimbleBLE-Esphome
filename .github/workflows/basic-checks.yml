@@ -1,10 +1,10 @@
 name: Basic checks
 
 # Vérifications qui fonctionnent dès M0, sans dépendre d'un environnement ESP-IDF ni de
-# code composant existant. Les workflows compile-matrix.yml (M1+), host-unit-tests.yml (M1+)
-# et state-machine-check.yml (M6) seront ajoutés quand les jalons correspondants seront atteints
-# (voir docs/ARCHITECTURE.md) -- volontairement absents pour l'instant plutôt que présents et
-# systématiquement rouges.
+# code composant existant. Les workflows compile-matrix.yml et host-unit-tests.yml (M1+/M8)
+# seront ajoutés quand les jalons correspondants seront atteints (voir docs/ARCHITECTURE.md) --
+# volontairement absents pour l'instant plutôt que présents et systématiquement rouges.
+# state-machine-check.yml (M6) est ajouté séparément, voir ce fichier dans le même dossier.
 
 on:
   push:

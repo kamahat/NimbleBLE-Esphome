@@ -9,3 +9,6 @@ build/
 secrets.yaml
 logs/
 tmp/
+spec/*.dot
+spec/states/
+tools/tla/*.jar
