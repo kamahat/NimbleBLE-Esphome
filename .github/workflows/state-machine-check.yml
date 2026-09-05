@@ -4,6 +4,8 @@ name: State machine check
 # C++ engine from silently diverging, then actually runs TLC against the
 # model. See docs/ARCHITECTURE.md (state machine section) and
 # tools/gen_state_machine/{gen_tla.py,gen_cpp.py,check_reachability.py}.
+# The host-buildable FSM unit test itself lives in host-unit-tests.yml (M8) --
+# every host-buildable test in one place, not split across two workflow files.
 
 on:
   push:
@@ -62,14 +64,3 @@ jobs:
             ble_state_machine.tla
       - name: Independent reachability check (no cycle confined to Connecting/Discovering)
         run: python3 tools/gen_state_machine/check_reachability.py spec/states.dot
-
-  host-unit-test:
-    runs-on: ubuntu-latest
-    needs: regen-diff-check
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build and run the host-buildable FSM unit test (no ESP-IDF)
-        run: |
-          g++ -std=c++20 -I components/nimble_ble -o /tmp/test_fsm \
-            tests/unit/test_ble_connection_fsm.cpp components/nimble_ble/ble_connection_fsm.cpp
-          /tmp/test_fsm

@@ -1,0 +1,31 @@
+name: Host unit tests
+
+# M8: every host-buildable unit test (no ESP-IDF, no ESPHome install --
+# plain g++) in one place. state-machine-check.yml keeps its own FSM
+# trace-replay build (tied to the spec-regen/diff-check pipeline it already
+# owns); this workflow is the general one for everything under tests/unit/.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  connect-backoff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run test_connect_backoff (no ESP-IDF)
+        run: |
+          g++ -std=c++20 -I components/nimble_ble -o /tmp/test_backoff \
+            tests/unit/test_connect_backoff.cpp components/nimble_ble/connect_backoff.cpp
+          /tmp/test_backoff
+
+  ble-connection-fsm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run test_ble_connection_fsm (no ESP-IDF)
+        run: |
+          g++ -std=c++20 -I components/nimble_ble -o /tmp/test_fsm \
+            tests/unit/test_ble_connection_fsm.cpp components/nimble_ble/ble_connection_fsm.cpp
+          /tmp/test_fsm
