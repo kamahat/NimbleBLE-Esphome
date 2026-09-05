@@ -30,8 +30,37 @@ silencieusement jusqu'à re-synchronisation (procédure : [`docs/UPSTREAM_SYNC.m
 
 ## État du projet
 
-M0 (recon & pin de la version ESPHome ciblée) en cours. Pas encore utilisable en production —
-voir les jalons dans `docs/ARCHITECTURE.md`.
+**v0.1.0** — M1 à M7 terminés et vérifiés (compilation + matériel réel quand pertinent) :
+rôles client et serveur GATT, `bluetooth_proxy` bout-en-bout avec Home Assistant, state
+machine de connexion/découverte vérifiée formellement (TLA+/TLC), durcissement sécurité
+(backoff exponentiel, classe de vulnérabilité pairing fl4p fermée, thread-safety des
+advertisements). Détail complet, y compris les limitations connues de portée v1, dans
+`docs/ARCHITECTURE.md` et `docs/OVERRIDE_CAVEATS.md`. Reste en dehors du périmètre v1 :
+allowlist de pairing complète (voir `docs/SECURITY.md`), pairing/passkey côté client BLE.
+
+## Démarrage rapide
+
+```yaml
+external_components:
+  - source: github://kamahat/NimbleBLE-Esphome
+    components: [esp32_ble, nimble_ble, ble_device_base, esp32_ble_tracker, bluetooth_proxy]
+
+esp32_ble_tracker:
+
+bluetooth_proxy:
+  active: true
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+```
+
+Rôle serveur GATT (`esp32_ble_server`) : voir `tests/components/esp32_ble_server/` pour un
+exemple complet (service/caractéristique/descripteur, `on_connect`/`on_write`/notify).
 
 ## Documentation
 
