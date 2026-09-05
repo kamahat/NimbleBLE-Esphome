@@ -355,3 +355,25 @@ exactement à la config déclarative, la CCCD est bien auto-gérée (pas de doub
 re-armement de l'advertising après déconnexion (déjà observé en log série lors des tests
 précédents : `client disconnected` suivi immédiatement d'un nouveau `Advertising fields...`)
 fonctionne comme prévu.
+
+## M7 -- connect_backoff, vérification matérielle
+
+Test config : `tests/components/ble_client/test.esp32c5-idf.yaml` (inchangé depuis M3 --
+`ble_client: mac_address: 01:23:45:67:89:AB` délibérément injoignable), ESP32-C5, capture
+série ~130s via l'arbiter.
+
+5 cycles consécutifs observés dans une seule capture, délai de backoff croissant
+conforme à la formule (`base * 2^(n-1)`, plafond 60000ms, jitter ±20%) :
+
+| Tentative | Délai observé | Base attendue | Plafonné ? | Dans la plage jitter [-20%,+20%] ? |
+|---|---|---|---|---|
+| 1 | 4500ms | 5000ms | non | oui (-10%) |
+| 2 | 10900ms | 10000ms | non | oui (+9%) |
+| 3 | 18400ms | 20000ms | non | oui (-8%) |
+| 4 | 34800ms | 40000ms | non | oui (-13%) |
+| 5 | 69000ms | 60000ms (80000 plafonné) | oui | oui (+15% sur le plafond) |
+
+`on_disconnect` se déclenche exactement une fois par cycle (aucune régression du
+comportement M3 établi), `error=13` (timeout borné) à chaque tentative -- confirme que le
+remplacement du délai fixe 5000ms par `compute_connect_backoff_delay_ms()` fonctionne de
+bout en bout sur du matériel réel, pas seulement en test unitaire host-buildable.

@@ -336,7 +336,8 @@ ESPHome core, pas une invention de ce projet.
     Rien à corriger dans cette réimplémentation clean-room -- pas de fichier dédié créé.
 
   Vérifié par compilation sans régression sur les 5 cibles de test concernées (M2 tracker,
-  M3 client, M4 proxy, M5 server). Vérification matérielle du backoff exponentiel (observer
-  concrètement la croissance 5s/10s/20s des délais sur l'adresse injoignable du test M3)
-  bloquée par l'indisponibilité de l'arbiter au moment de ce jalon -- reste à faire.
+  M3 client, M4 proxy, M5 server). Backoff exponentiel vérifié sur matériel réel (arbiter
+  de nouveau joignable) : 5 cycles consécutifs sur l'adresse injoignable du test M3,
+  délais observés 4500/10900/18400/34800/69000ms -- progression ×2 conforme jusqu'au
+  plafond (60000ms), jitter ±20% correct à chaque cycle (voir HARDWARE_VALIDATION.md).
 - **M8** — CI, docs, première release taguée.
