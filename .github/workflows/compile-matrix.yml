@@ -1,0 +1,43 @@
+name: Compile matrix
+
+# M8: actually compiles every tests/components/*/test.*.yaml target, matrixed
+# across GitHub Actions runners. Uses the official esphome/esphome Docker
+# image (ESP-IDF toolchain already bundled -- avoids a several-minutes-per-job
+# fresh toolchain download) pinned to the exact version this project has been
+# developed and hardware-verified against all along (see every compile log in
+# docs/HARDWARE_VALIDATION.md: "ESPHome version 2026.8.2"). Note: that exact
+# version string is a real esphome/esphome Docker Hub tag (a dev-branch
+# snapshot) but is NOT published to PyPI under that name -- `pip install
+# esphome==2026.8.2` will not resolve. Bump ESPHOME_IMAGE_TAG deliberately,
+# not silently, the next time this project's own dev environment moves on
+# (see docs/UPSTREAM_SYNC.md).
+
+on:
+  push:
+  pull_request:
+
+env:
+  ESPHOME_IMAGE_TAG: "2026.8.2"
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - tests/components/esp32_ble/test.esp32-idf.yaml
+          - tests/components/esp32_ble/test.esp32c5-idf.yaml
+          - tests/components/esp32_ble_tracker/test.esp32-idf.yaml
+          - tests/components/esp32_ble_tracker/test.esp32c5-idf.yaml
+          - tests/components/ble_client/test.esp32c5-idf.yaml
+          - tests/components/bluetooth_connection/test.esp32c5-idf.yaml
+          - tests/components/bluetooth_proxy/test.esp32c5-idf.yaml
+          - tests/components/esp32_ble_server/test.esp32-idf.yaml
+          - tests/components/esp32_ble_server/test.esp32c5-idf.yaml
+    steps:
+      - uses: actions/checkout@v4
+      - name: esphome compile ${{ matrix.target }}
+        run: |
+          docker run --rm -v "${PWD}":/config -w /config \
+            "esphome/esphome:${ESPHOME_IMAGE_TAG}" compile "${{ matrix.target }}"

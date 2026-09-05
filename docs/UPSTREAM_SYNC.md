@@ -23,3 +23,11 @@ immédiat — pour éviter l'accumulation silencieuse de divergence documentée 
    nouveau commit avant de merger la mise à jour.
 5. **Mettre à jour `ARCHITECTURE.md`** avec le nouveau commit figé et la date de
    re-synchronisation.
+
+## M8 addition -- le tag Docker de la CI aussi
+
+`.github/workflows/compile-matrix.yml` épingle `ESPHOME_IMAGE_TAG` (image Docker
+`esphome/esphome`) sur la même version que le commit ESPHome ciblé documenté ici. Une
+resynchronisation qui oublie de le mettre à jour fait tourner la CI contre une version
+différente de celle réellement utilisée/vérifiée matériellement -- ajouter cette étape à la
+liste ci-dessus à chaque resynchronisation.
