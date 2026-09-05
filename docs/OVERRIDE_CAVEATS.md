@@ -77,10 +77,35 @@ fichier toute fonctionnalité upstream sciemment non reprise (avec la raison).
   réelle de la connexion/déconnexion), nos actions sont fire-and-forget -- `play()` lance
   l'opération et la chaîne continue immédiatement. `on_connect`/`on_disconnect` restent le
   moyen de réagir au résultat réel.
-- **Backoff de reconnexion fixe (5000ms), pas exponentiel** : `esp32_ble_client::BLEClientBase`
-  retente après un délai fixe une fois en état `Backoff` (voir `BACKOFF_RETRY_DELAY_MS`).
-  Le hardening backoff exponentiel + jitter + plafond est prévu M7 (voir ARCHITECTURE.md),
-  volontairement pas anticipé ici.
+- ~~Backoff de reconnexion fixe (5000ms), pas exponentiel~~ -- **fait en M7** :
+  `components/nimble_ble/connect_backoff.h`, vérifié sur matériel réel (voir
+  HARDWARE_VALIDATION.md).
+
+### `esp32_ble_server` (M5, 2026-09-04)
+
+- **Pas de service Device Information auto-généré** (`manufacturer_name_string:`,
+  `firmware_version:`, `model:`, etc. du core) -- un utilisateur qui en a besoin le déclare
+  lui-même comme un service `0x180A` normal avec ses caractéristiques standard.
+- **Pas de sugar CUD/CCCD** : le core génère automatiquement un descripteur Characteristic
+  User Description et gère certaines options CCCD de haut niveau. Ici, un CUD (`0x2901`) se
+  déclare explicitement comme n'importe quel descripteur ; la CCCD (`0x2902`) reste
+  auto-gérée par NimBLE lui-même pour toute caractéristique notify/indicate (pas par ce
+  composant) -- un `0x2902` déclaré par l'utilisateur est accepté (parité API) mais exclu de
+  la table réellement enregistrée.
+- **Pas de valeurs templatées (lambda) pour `value:`** : valeur statique uniquement (liste
+  d'octets ou chaîne). Les mises à jour dynamiques passent par les actions
+  `ble_server.characteristic.set_value`/`.notify`/`ble_server.descriptor.set_value`
+  (elles-mêmes byte-list-only, pas de `std::string` -- voir `set_buffer()` du core vendored
+  tel quel).
+- **Pas d'options d'encodage avancées** (string_encoding/endianness) ni d'appearance BLE.
+
+### Pairing BLE (M7, 2026-09-05)
+
+- **Pas d'allowlist par MAC/service avec accept/reject explicite** : voir SECURITY.md pour
+  ce qui EST fait (la classe de vulnérabilité fl4p -- passkey codé en dur auto-accepté --
+  est rendue structurellement impossible via `sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT`) versus
+  ce qui reste ouvert (un vrai handler `BLE_GAP_EVENT_REPEAT_PAIRING` avec allowlist, non
+  écrit faute d'un pair matériel pour le vérifier).
 
 
 ## Piège vérifié en pratique (M1, 2026-08-31)
